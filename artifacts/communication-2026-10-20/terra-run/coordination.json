@@ -1,0 +1,53 @@
+{
+  "requirements": [],
+  "reviews": [],
+  "claims": [],
+  "checkpoints": [
+    {
+      "id": "a6d44239-4aef-4ff6-88c9-a13ce7daf6df",
+      "mission_id": "48cf07d2-478d-4d16-88f8-1eb6086a4b1d",
+      "agent_id": "A3",
+      "run_id": "f569e554-3a48-40be-8a75-257168f02175",
+      "body": {
+        "evidence": {
+          "incomingTaskId": "f92f092e-15cc-4220-8042-e5acf3918e69",
+          "outgoingTaskId": "c5816d57-a5af-41fe-8752-f021f125640f",
+          "incomingReplyMessageId": "a3-reply-a2-update-format-1",
+          "outgoingAnswerMessageId": "a1-reply-a3-status-format-1"
+        },
+        "conclusion": "For brief recurring team updates, use a hybrid: one context sentence only when causal or decision context matters, followed by actionable bullets. Bullets alone suit simple updates because they optimize scanning of ownership, blockers, and next steps."
+      },
+      "created_at": "2026-10-20T17:27:09.907Z"
+    },
+    {
+      "id": "7c7d6a0a-da3a-4dac-87c5-56c194558e5e",
+      "mission_id": "48cf07d2-478d-4d16-88f8-1eb6086a4b1d",
+      "agent_id": "A1",
+      "run_id": "da650b3a-be52-4c2b-aa04-2e33a4c15013",
+      "body": {
+        "status": "completed",
+        "conclusion": "For recurring cross-team status updates, default to 2–4 bullets to make owners, blockers, and next actions scannable. Use a short paragraph for one tightly coupled narrative or decision rationale; even then, end with a clear decision or next step. Supporting consultations: outgoing task 9634b5db-bdad-44f7-b2c3-7ddc4b6427c5 (A2 terminal answer acknowledged) and incoming task c5816d57-a5af-41fe-8752-f021f125640f (answered completed)."
+      },
+      "created_at": "2026-10-20T17:27:29.753Z"
+    },
+    {
+      "id": "2f7d2a25-ce93-468a-ba8c-b7d4e8e1a511",
+      "mission_id": "48cf07d2-478d-4d16-88f8-1eb6086a4b1d",
+      "agent_id": "A2",
+      "run_id": "b235c10c-5eea-4158-8217-adeb0cefee10",
+      "body": {
+        "evidence": {
+          "incomingTaskId": "9634b5db-bdad-44f7-b2c3-7ddc4b6427c5",
+          "outgoingTaskId": "f92f092e-15cc-4220-8042-e5acf3918e69",
+          "replyMessageId": "a2-reply-a1-format-proposal",
+          "partnerAnswerMessageId": "a3-reply-a2-update-format-1",
+          "incomingProposalMessageId": "a1-format-proposal-v1",
+          "outgoingQuestionMessageId": "a2-b235c10c-update-format-question"
+        },
+        "conclusion": "Use a hybrid brief-update format by default: one concise context sentence when causal framing matters, followed by 2–4 action-focused bullets covering owner, blocker, and next step. Use bullets alone for simple updates; use a short paragraph only for a single tightly interdependent narrative, ending with a decision or next step."
+      },
+      "created_at": "2026-10-20T17:27:39.856Z"
+    }
+  ],
+  "completion_proposals": []
+}

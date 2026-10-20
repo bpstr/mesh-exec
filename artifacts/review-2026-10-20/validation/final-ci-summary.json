@@ -1,0 +1,29 @@
+[
+  {
+    "name": "Node 22 / PostgreSQL 17 / Linux sandbox",
+    "conclusion": "SUCCESS",
+    "url": "https://github.com/bpstr/mesh-exec/actions/runs/39458691257/job/118752161822",
+    "tests": 40,
+    "pass": 40,
+    "fail": 0,
+    "skipped": 0
+  },
+  {
+    "name": "Node 24 / PostgreSQL 17 / Linux sandbox",
+    "conclusion": "SUCCESS",
+    "url": "https://github.com/bpstr/mesh-exec/actions/runs/39458691257/job/118752161352",
+    "tests": 40,
+    "pass": 40,
+    "fail": 0,
+    "skipped": 0
+  },
+  {
+    "name": "Node 24 / macOS sandbox",
+    "conclusion": "SUCCESS",
+    "url": "https://github.com/bpstr/mesh-exec/actions/runs/39458691257/job/118752162016",
+    "tests": 40,
+    "pass": 40,
+    "fail": 0,
+    "skipped": 0
+  }
+]

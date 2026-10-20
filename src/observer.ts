@@ -13,38 +13,88 @@ import {
 import type { Database, Sql } from './types.js';
 import { invariant } from './types.js';
 
+/** CLI receipts only: missing/interrupted usage is unknown, never estimated as zero. */
+export async function usage(db: Sql, missionId: string) {
+  const result = await db.query<{ id: string; receipts: unknown[] }>(
+    `SELECT r.id, COALESCE(jsonb_agg(t.data->'event'->'usage')
+       FILTER (WHERE t.seq IS NOT NULL), '[]'::jsonb) AS receipts
+     FROM runs r LEFT JOIN trace_events t ON t.mission_id=r.mission_id
+       AND t.run_id=r.id AND t.kind='codex.turn.completed'
+     WHERE r.mission_id=$1 GROUP BY r.id ORDER BY r.id`,
+    [missionId],
+  );
+  let validReceipts = 0;
+  let invalidReceipts = 0;
+  let runsWithUsage = 0;
+  const reportedTokens = { input: 0, cachedInput: 0, output: 0, total: 0 };
+  for (const run of result.rows) {
+    let reported = false;
+    for (const receipt of run.receipts) {
+      const r = receipt as Record<string, unknown> | null;
+      const values = [r?.input_tokens, r?.cached_input_tokens, r?.output_tokens];
+      if (
+        !values.every((v) => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0) ||
+        (r!.cached_input_tokens as number) > (r!.input_tokens as number)
+      ) {
+        invalidReceipts++;
+        continue;
+      }
+      const [input, cached, output] = values as number[];
+      reportedTokens.input += input;
+      reportedTokens.cachedInput += cached;
+      reportedTokens.output += output;
+      reportedTokens.total += input + output; // Cached input is already part of input.
+      validReceipts++;
+      reported = true;
+    }
+    if (reported) runsWithUsage++;
+  }
+  return {
+    source: 'codex.turn.completed',
+    runs: result.rows.length,
+    runsWithUsage,
+    runsWithoutUsage: result.rows.length - runsWithUsage,
+    validReceipts,
+    invalidReceipts,
+    reportedTokens,
+    note: 'Reported receipts only; unreported usage and monetary cost are unknown.',
+  };
+}
+
 export async function status(db: Sql, missionId: string): Promise<Record<string, unknown>> {
-  const [mission, runs, slots, requirements, messages, outbox, operations] = await Promise.all([
-    db.query(
-      'SELECT id,repo,roadmap_path,roadmap_hash,state,revision,config,created_at,updated_at,acceptance FROM missions WHERE id=$1',
-      [missionId],
-    ),
-    db.query(
-      'SELECT state,count(*)::integer AS count FROM runs WHERE mission_id=$1 GROUP BY state',
-      [missionId],
-    ),
-    db.query(
-      'SELECT id,generation,state,active_run_id,handoff FROM slots WHERE mission_id=$1 ORDER BY id',
-      [missionId],
-    ),
-    db.query(
-      'SELECT state,count(*)::integer AS count FROM requirements WHERE mission_id=$1 GROUP BY state',
-      [missionId],
-    ),
-    db.query(
-      `SELECT count(*)::integer AS total,count(*) FILTER(WHERE handled_at IS NULL)::integer AS pending,
+  const [mission, runs, slots, requirements, messages, outbox, operations, tokenUsage] =
+    await Promise.all([
+      db.query(
+        'SELECT id,repo,roadmap_path,roadmap_hash,state,revision,config,created_at,updated_at,acceptance FROM missions WHERE id=$1',
+        [missionId],
+      ),
+      db.query(
+        'SELECT state,count(*)::integer AS count FROM runs WHERE mission_id=$1 GROUP BY state',
+        [missionId],
+      ),
+      db.query(
+        'SELECT id,generation,state,active_run_id,handoff FROM slots WHERE mission_id=$1 ORDER BY id',
+        [missionId],
+      ),
+      db.query(
+        'SELECT state,count(*)::integer AS count FROM requirements WHERE mission_id=$1 GROUP BY state',
+        [missionId],
+      ),
+      db.query(
+        `SELECT count(*)::integer AS total,count(*) FILTER(WHERE handled_at IS NULL)::integer AS pending,
       EXTRACT(EPOCH FROM now()-min(created_at) FILTER(WHERE handled_at IS NULL)) AS oldest_pending_seconds FROM mailbox_deliveries WHERE mission_id=$1`,
-      [missionId],
-    ),
-    db.query(
-      'SELECT state,count(*)::integer AS count,sum(attempts)::integer AS attempts FROM a2a_outbox WHERE mission_id=$1 GROUP BY state',
-      [missionId],
-    ),
-    db.query(
-      'SELECT kind,state,count(*)::integer AS count FROM workspace_operations WHERE mission_id=$1 GROUP BY kind,state',
-      [missionId],
-    ),
-  ]);
+        [missionId],
+      ),
+      db.query(
+        'SELECT state,count(*)::integer AS count,sum(attempts)::integer AS attempts FROM a2a_outbox WHERE mission_id=$1 GROUP BY state',
+        [missionId],
+      ),
+      db.query(
+        'SELECT kind,state,count(*)::integer AS count FROM workspace_operations WHERE mission_id=$1 GROUP BY kind,state',
+        [missionId],
+      ),
+      usage(db, missionId),
+    ]);
   invariant(mission.rows[0], 'NOT_FOUND', 'Mission does not exist');
   return {
     mission: mission.rows[0],
@@ -54,6 +104,7 @@ export async function status(db: Sql, missionId: string): Promise<Record<string,
     messages: messages.rows[0],
     outbox: outbox.rows,
     operations: operations.rows,
+    usage: tokenUsage,
   };
 }
 
@@ -153,6 +204,24 @@ export async function metrics(db: Sql, missionId: string): Promise<string> {
     (s.operations as any[]).map((r) => ({
       labels: { kind: r.kind, state: r.state },
       value: r.count,
+    })),
+  );
+  const tokenUsage = s.usage as Awaited<ReturnType<typeof usage>>;
+  emit('mesh_usage_runs', 'Runs with or without valid CLI usage receipts', 'gauge', [
+    { labels: { reporting: 'present' }, value: tokenUsage.runsWithUsage },
+    { labels: { reporting: 'missing' }, value: tokenUsage.runsWithoutUsage },
+  ]);
+  emit('mesh_usage_receipts', 'Valid and malformed CLI usage receipts', 'gauge', [
+    { labels: { validity: 'valid' }, value: tokenUsage.validReceipts },
+    { labels: { validity: 'invalid' }, value: tokenUsage.invalidReceipts },
+  ]);
+  emit(
+    'mesh_reported_tokens',
+    'Tokens in valid CLI receipts only; unreported usage is unknown; cached input is included in input',
+    'gauge',
+    Object.entries(tokenUsage.reportedTokens).map(([kind, value]) => ({
+      labels: { kind },
+      value,
     })),
   );
   const counters = await db.query<{ kind: string; count: number }>(

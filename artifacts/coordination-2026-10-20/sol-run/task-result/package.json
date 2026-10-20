@@ -1,0 +1,8 @@
+{
+  "name": "mesh-slugifier-pilot",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test slugify.test.mjs"
+  }
+}

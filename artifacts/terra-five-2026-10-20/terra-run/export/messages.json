@@ -1,0 +1,66 @@
+[
+  {
+    "delivery_id": "96e60c94-370c-4c03-b927-366f42e9273f",
+    "mission_id": "01691e7c-e5f6-4235-9060-95b1a40f7a55",
+    "sender_id": "A2",
+    "recipient_id": "A1",
+    "message_id": "a2-request-review-req",
+    "task_id": "580a0f34-b46b-45b7-89e0-a898e18eaf45",
+    "message": {
+      "role": "ROLE_USER",
+      "parts": [
+        {
+          "text": "Please independently review requirement slugifier-deliverables revision 2 against final manifest 44f9df06530b3e24f5f32d59710b47f7a1d4796c8beb96514561a40781c85f57 and record a requirement review verdict via mesh_review. Reply when recorded.",
+          "mediaType": "text/plain"
+        }
+      ],
+      "taskId": "580a0f34-b46b-45b7-89e0-a898e18eaf45",
+      "metadata": {
+        "mesh": {
+          "kind": "review"
+        }
+      },
+      "contextId": "bf00ee43-0292-4790-801b-e3b6e75f65b0",
+      "messageId": "a2-request-review-req"
+    },
+    "kind": "review",
+    "trace_id": "544c6a91-5bba-4039-a055-e92ef52c337d",
+    "disposition": null,
+    "disposition_reason": null,
+    "handled_run_id": null,
+    "created_at": "2026-10-20T17:49:51.051Z",
+    "handled_at": null
+  },
+  {
+    "delivery_id": "41312a2a-e53d-4074-83fc-101f47d29e25",
+    "mission_id": "01691e7c-e5f6-4235-9060-95b1a40f7a55",
+    "sender_id": "A2",
+    "recipient_id": "A3",
+    "message_id": "a2-request-review-coverage",
+    "task_id": "58c784a5-de2d-4e3f-8f06-32203dfb41af",
+    "message": {
+      "role": "ROLE_USER",
+      "parts": [
+        {
+          "text": "Please independently review roadmap coverage against final manifest 44f9df06530b3e24f5f32d59710b47f7a1d4796c8beb96514561a40781c85f57 and record a coverage review via mesh_review (target optional). Reply when recorded.",
+          "mediaType": "text/plain"
+        }
+      ],
+      "taskId": "58c784a5-de2d-4e3f-8f06-32203dfb41af",
+      "metadata": {
+        "mesh": {
+          "kind": "review"
+        }
+      },
+      "contextId": "700bfad6-ee1e-4026-9d95-86e7070242f0",
+      "messageId": "a2-request-review-coverage"
+    },
+    "kind": "review",
+    "trace_id": "2aeb55a8-abb3-491a-9002-d66d84dfad7a",
+    "disposition": null,
+    "disposition_reason": null,
+    "handled_run_id": null,
+    "created_at": "2026-10-20T17:49:54.754Z",
+    "handled_at": null
+  }
+]

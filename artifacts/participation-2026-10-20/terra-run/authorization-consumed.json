@@ -1,0 +1,14 @@
+{
+  "model": "gpt-5.6-terra",
+  "agents": 5,
+  "maxLaunches": 5,
+  "maxToolCalls": null,
+  "maxElapsedMs": 300000,
+  "replacements": false,
+  "retries": false,
+  "stop": "mission completion, first provider error, five-minute cutoff",
+  "authorization": "User explicitly requested general lifecycle fixes followed by five Terra agents for five minutes, no tool-call limit, preserving messages and results. Exactly five launches, no replacements/provider retries; stop on completion, first provider error, or the wall-clock deadline.",
+  "startedAt": "2026-10-20T18:04:08.669Z",
+  "runnerCommit": "9ed4a6524309cecf72756a8af5ae372296ce7e9a",
+  "codexVersion": "codex-cli 0.160.0"
+}

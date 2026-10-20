@@ -1,0 +1,28 @@
+✔ independent MCP peers consult over A2A, publish in one checkout, and complete with a traced final barrier (2097.767875ms)
+✔ yield releases claims without ending a live peer; corrected path claims can publish (536.268042ms)
+✔ batched acknowledgments preserve task state and safely replay after a partial failure (549.186209ms)
+✔ completion refuses stale coverage, unhandled replies, and a changing validation source (644.393083ms)
+✔ yield preserves work that arrived after the last observation without self-waking on claim release (866.383209ms)
+✔ identical requirement publication preserves revision, author, reviews, and work revision (470.322834ms)
+✔ atomic overlapping claim bundles have one winner; stale generations cannot write (382.36375ms)
+✔ knowledge revisions invalidate transitive dependants and preserve history (363.089917ms)
+✔ trace replay is committed, correlated, complete, and secret-redacted; heartbeats do not wake slots (378.562208ms)
+✔ competing writes, stale dependencies, idempotency, and symlink escapes are rejected without losing content (724.196417ms)
+✔ the operating-system flock excludes another daemon, and releasing it permits restart (685.633417ms)
+✔ a failed prepared-record transaction never publishes a file (411.812ms)
+✔ restart reconciles a partial journal and refuses an unexpected external edit (459.312416ms)
+✔ command retries run once and full output survives bounded, redacted previews (484.553041ms)
+✔ source mutators block coherent reads and final verification retains the gate through acceptance (651.337375ms)
+✔ cancellation terminates the managed process group and revoked runs cannot publish (429.727958ms)
+✔ yield drains commands, resumes admission, and cannot undo concurrent supervisor revocation (405.1365ms)
+✔ a final barrier drains full command capacity without deadlocking queued source mutations (836.761708ms)
+✔ an admission delayed by sandbox qualification cannot cross a final barrier (406.142125ms)
+✔ real OS sandbox forbids source writes and does not silently fall back (505.731625ms)
+ℹ tests 20
+ℹ suites 0
+ℹ pass 20
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 13300.19625

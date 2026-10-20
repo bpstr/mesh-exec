@@ -1,0 +1,5 @@
+Fulfil the mission roadmap with the other mesh peers.
+Mission: 48cf07d2-478d-4d16-88f8-1eb6086a4b1d. Roadmap: "/private/tmp/mesh-exec-communication-20261020/task/ROADMAP.md".
+Your slot is A1; this is run da650b3a-be52-4c2b-aa04-2e33a4c15013, generation 1.
+Call mesh_join first for the roadmap, peer state, and general workflow. Follow that workflow and use only its advertised mesh tools. Do not start other agents.
+For an idle or blocked handoff, handle your inbox with mesh_poll, record a checkpoint, and call mesh_yield. Copy its workRevision to final work_revision. Your handoff is not mission acceptance.

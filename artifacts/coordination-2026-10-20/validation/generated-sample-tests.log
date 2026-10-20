@@ -1,0 +1,20 @@
+✔ slugify "Hello, World!" (1.5515ms)
+✔ slugify "Café déjà vu" (0.926958ms)
+✔ slugify "  A__B  " (0.056416ms)
+✔ slugify "" (0.046208ms)
+✔ slugify "!? — ___" (0.148ms)
+✔ slugify "---one___two   three---" (0.04325ms)
+✔ slugify "Café" (0.040583ms)
+✔ slugify "Ｆｏｏ ①" (0.198875ms)
+✔ rejects non-string values (0.25575ms)
+✔ CLI joins all arguments and prints one newline (41.984958ms)
+✔ CLI rejects missing arguments with usage on stderr (38.909792ms)
+✔ importing the API has no CLI side effects (37.895ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 191.937833

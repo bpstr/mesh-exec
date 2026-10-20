@@ -1,0 +1,15 @@
+{
+  "baseCommit": "2891851072cf877a194fb83505d8a4fbde1a0f2f",
+  "sourceHashes": {
+    "src/codex.ts": "b4568a7be12b47e8f9542571f785269e28b559db735eb06e02ea70411847b519",
+    "src/coordination.ts": "2cfba8a0cb17a92ae0512508551ea17e312035f281e665d9e776ad5fdb9efdd0",
+    "src/tools.ts": "49cfc549ec33629d6c65f9a936f3e5786985c6b9156cfd28895e2ddd41e75731",
+    "src/store.ts": "16d49edb8cd50eaf8f64ff7126683678578431d1697261ba9d01b354938f2ec9",
+    "src/workspace.ts": "e93b5ce21d775b8613c478dea8d25198a3c4e2d95e1d1505dd7ec11cd28b66e8",
+    "test/store.test.ts": "96b195acc2a22240cd3c694485eb6ddf16b48e754e099a1b38fe30ed8c508a9f",
+    "test/daemon.test.ts": "f7d515fd2eadbe448df2fe9d12892235ae2333cec80efb8572e77609dc6332e0",
+    "test/workspace.test.ts": "4330bd5582c7abde0eefd74fffc1eab6aa156f28bf454042a36ac9353e6f2383",
+    "docs/coordination.md": "2fec1fe41fc142f664da345f60e499ebec138114495fce54b9513dcb62532f03"
+  },
+  "liveRetest": "User explicitly chose to keep offline fixes and stop live runs. No post-fix live attempt authorized."
+}

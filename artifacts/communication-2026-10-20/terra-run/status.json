@@ -1,0 +1,83 @@
+{
+  "mission": {
+    "id": "48cf07d2-478d-4d16-88f8-1eb6086a4b1d",
+    "repo": "/private/tmp/mesh-exec-communication-20261020/task",
+    "roadmap_path": "/private/tmp/mesh-exec-communication-20261020/task/ROADMAP.md",
+    "roadmap_hash": "751e23fc9f3003629d89b4656b9c25ac9b2691acade30df09ca19a200224c12a",
+    "state": "resource-limit",
+    "revision": "16",
+    "config": {
+      "agents": 3,
+      "workflow": "discussion"
+    },
+    "created_at": "2026-10-20T17:26:23.229Z",
+    "updated_at": "2026-10-20T17:27:39.856Z",
+    "acceptance": null
+  },
+  "runs": [
+    {
+      "state": "exited",
+      "count": 3
+    }
+  ],
+  "slots": [
+    {
+      "id": "A1",
+      "generation": 1,
+      "state": "parked",
+      "active_run_id": null,
+      "handoff": {
+        "outcome": "idle",
+        "summary": "Concluded that recurring cross-team updates should default to 2–4 bullets for scanability of owners, blockers, and actions; use a short paragraph only for a tightly connected narrative or decision rationale, ending with a clear next step. Completed and acknowledged both mesh consultations; checkpoint recorded.",
+        "waiting_on": [],
+        "checkpoint_id": "7c7d6a0a-da3a-4dac-87c5-56c194558e5e",
+        "work_revision": "11"
+      }
+    },
+    {
+      "id": "A2",
+      "generation": 1,
+      "state": "parked",
+      "active_run_id": null,
+      "handoff": {
+        "outcome": "idle",
+        "summary": "Concluded that brief updates should default to concise context only when needed, followed by actionable bullets; pure bullets suit simple updates, while paragraphs suit one tightly linked narrative. Checkpoint: 2f7d2a25-ce93-468a-ba8c-b7d4e8e1a511.",
+        "waiting_on": [],
+        "checkpoint_id": "2f7d2a25-ce93-468a-ba8c-b7d4e8e1a511",
+        "work_revision": "11"
+      }
+    },
+    {
+      "id": "A3",
+      "generation": 1,
+      "state": "parked",
+      "active_run_id": null,
+      "handoff": {
+        "outcome": "idle",
+        "summary": "Completed the peer discussion. Recommendation: use actionable bullets by default; add one short context sentence only when causal or decision context matters. Checkpoint: a6d44239-4aef-4ff6-88c9-a13ce7daf6df.",
+        "waiting_on": [],
+        "checkpoint_id": "a6d44239-4aef-4ff6-88c9-a13ce7daf6df",
+        "work_revision": "5"
+      }
+    }
+  ],
+  "requirements": [],
+  "messages": {
+    "total": 6,
+    "pending": 0,
+    "oldest_pending_seconds": null
+  },
+  "outbox": [
+    {
+      "state": "delivered",
+      "count": 3,
+      "attempts": 3
+    },
+    {
+      "state": "failed",
+      "count": 3,
+      "attempts": 3
+    }
+  ],
+  "operations": []
+}

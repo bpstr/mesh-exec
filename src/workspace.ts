@@ -159,6 +159,7 @@ interface RunningCommand {
   principal: Principal;
   operationId: string;
   cancelled: boolean;
+  capacityAbort: AbortController;
   child?: ChildProcess;
   done?: Promise<void>;
 }
@@ -179,6 +180,8 @@ export interface WorkspaceOptions {
   terminate?: typeof terminateProcessTree;
   /** Defaults to two expensive commands, separately from the CLI population. */
   maxCommands?: number;
+  /** Accepted nonterminal work beyond maxCommands; defaults to 32. */
+  maxQueuedCommands?: number;
   lockDirectory?: string;
 }
 export interface FileSnapshot {
@@ -235,18 +238,46 @@ function checkOperationId(operationId: string): void {
 
 class CommandCapacity {
   private active = 0;
-  private waiters: Array<() => void> = [];
+  private waiters: Array<{
+    accept: (release: (() => void) | null) => void;
+    signal: AbortSignal;
+    abort: () => void;
+  }> = [];
   constructor(private readonly limit: number) {}
-  async acquire(): Promise<() => void> {
-    if (this.active >= this.limit) await new Promise<void>((accept) => this.waiters.push(accept));
-    else this.active++;
+  snapshot(): { active: number; waiting: number } {
+    return { active: this.active, waiting: this.waiters.length };
+  }
+  async acquire(signal: AbortSignal): Promise<(() => void) | null> {
+    if (signal.aborted) return null;
+    if (this.active < this.limit) {
+      this.active++;
+      return this.release();
+    }
+    return new Promise((accept) => {
+      const waiter = {
+        accept,
+        signal,
+        abort: () => {
+          const index = this.waiters.indexOf(waiter);
+          if (index < 0) return;
+          this.waiters.splice(index, 1);
+          accept(null);
+        },
+      };
+      this.waiters.push(waiter);
+      signal.addEventListener('abort', waiter.abort, { once: true });
+    });
+  }
+  private release(): () => void {
     let released = false;
     return () => {
       if (released) return;
       released = true;
       const next = this.waiters.shift();
-      if (next) next();
-      else this.active--;
+      if (next) {
+        next.signal.removeEventListener('abort', next.abort);
+        next.accept(this.release());
+      } else this.active--;
     };
   }
 }
@@ -269,6 +300,8 @@ export class Workspace {
   private quarantine?: string;
   private readonly commands = new Map<string, RunningCommand>();
   private readonly revokedRuns = new Set<string>();
+  private readonly yieldingRuns = new Set<string>();
+  private readonly admissionEpochs = new Map<string, number>();
   private activePatch?: { runId: string; done: Promise<void> };
 
   private constructor(
@@ -296,6 +329,13 @@ export class Workspace {
       Number.isInteger(options.maxCommands ?? 2) && (options.maxCommands ?? 2) > 0,
       'invalid_capacity',
       'Command capacity must be a positive integer.',
+    );
+    invariant(
+      Number.isSafeInteger(options.maxQueuedCommands ?? 32) &&
+        (options.maxQueuedCommands ?? 32) >= 0 &&
+        Number.isSafeInteger((options.maxCommands ?? 2) + (options.maxQueuedCommands ?? 32)),
+      'invalid_capacity',
+      'Queued command capacity must be a nonnegative safe integer.',
     );
     const repo = await realpath(options.repo);
     const information = await lstat(repo);
@@ -364,23 +404,41 @@ export class Workspace {
     }
   }
 
-  private assertUsable(): void {
+  private assertUsable(allowClosing = false): void {
     invariant(
-      !this.closed && !this.closing,
+      !this.closed && (allowClosing || !this.closing),
       'workspace_closed',
       'The workspace is closing or closed.',
     );
     if (this.quarantine) throw new MeshError('workspace_quarantined', this.quarantine);
   }
 
-  private async gated<T>(body: () => Promise<T>): Promise<T> {
+  private async gated<T>(body: () => Promise<T>, signal?: AbortSignal): Promise<T> {
     if (this.context.getStore() && this.context.getStore() === this.activeGate) return body();
     const previous = this.tail;
     let release!: () => void;
     this.tail = new Promise<void>((accept) => {
       release = accept;
     });
-    await previous;
+    if (signal) {
+      let abort!: () => void;
+      const cancelled = new Promise<boolean>((accept) => {
+        abort = () => accept(false);
+        if (signal.aborted) abort();
+        else signal.addEventListener('abort', abort, { once: true });
+      });
+      const acquired = await Promise.race([previous.then(() => true), cancelled]);
+      signal.removeEventListener('abort', abort);
+      if (!acquired || signal.aborted) {
+        // Keep the gate chain behind its predecessor, but never call this body.
+        // The cancelled caller can finish without releasing another owner's gate.
+        void previous.then(release);
+        throw new MeshError(
+          'command_cancelled',
+          'Command cancelled before acquiring the source gate.',
+        );
+      }
+    } else await previous;
     const token = Symbol('workspace-publication');
     this.activeGate = token;
     try {
@@ -603,6 +661,7 @@ export class Workspace {
     requestHash: string,
     request: unknown,
     journal?: PatchJournal | CommandJournal,
+    admission?: unknown,
   ): Promise<{ operation: WorkspaceOperation; created: boolean }> {
     return this.options.db.transaction(async (tx) => {
       const inserted = await tx.query(
@@ -629,7 +688,7 @@ export class Workspace {
         'operation_id_conflict',
         'This operation ID was already used with different arguments.',
       );
-      if (inserted.rows.length)
+      if (inserted.rows.length) {
         await this.emit(
           principal,
           `workspace.${kind}.prepared`,
@@ -637,6 +696,9 @@ export class Workspace {
           operationId,
           tx,
         );
+        if (admission)
+          await this.emit(principal, 'workspace.command.admitted', admission, operationId, tx);
+      }
       return { operation, created: inserted.rows.length > 0 };
     });
   }
@@ -687,7 +749,7 @@ export class Workspace {
     return this.gated(async () => {
       this.assertUsable();
       invariant(
-        !this.revokedRuns.has(principal.runId),
+        !this.runUnavailable(principal.runId),
         'run_revoked',
         'This run can no longer publish changes.',
       );
@@ -774,7 +836,7 @@ export class Workspace {
           { ...input, changes: input.changes.map(({ content: _content, ...change }) => change) },
           journal,
         );
-        if (this.revokedRuns.has(principal.runId)) {
+        if (this.runUnavailable(principal.runId)) {
           await this.setState(principal, input.operationId, 'cancelled');
           return this.operation(principal, input.operationId);
         }
@@ -951,8 +1013,15 @@ export class Workspace {
   }
 
   async manifest(): Promise<SourceManifest> {
+    return this.sourceManifest(false);
+  }
+
+  private async sourceManifest(
+    allowClosing: boolean,
+    signal?: AbortSignal,
+  ): Promise<SourceManifest> {
     return this.gated(async () => {
-      this.assertUsable();
+      this.assertUsable(allowClosing);
       const { stdout } = await execFileAsync(
         'git',
         [
@@ -1017,7 +1086,7 @@ export class Workspace {
         basis: 'git-tracked-and-unignored',
         files,
       };
-    });
+    }, signal);
   }
 
   async exec(principal: Principal, input: ExecInput): Promise<WorkspaceOperation> {
@@ -1029,9 +1098,13 @@ export class Workspace {
     input: ExecInput,
     verification: boolean,
   ): Promise<WorkspaceOperation> {
+    const admissionEpoch = this.admissionEpochs.get(principal.runId) ?? 0;
+    const admissionCurrent = () =>
+      !this.runUnavailable(principal.runId) &&
+      (this.admissionEpochs.get(principal.runId) ?? 0) === admissionEpoch;
     this.assertUsable();
     invariant(
-      verification || !this.revokedRuns.has(principal.runId),
+      verification || admissionCurrent(),
       'run_revoked',
       'This run can no longer start commands.',
     );
@@ -1119,10 +1192,21 @@ export class Workspace {
         'Final verification has paused new command admission.',
       );
       invariant(
-        verification || !this.revokedRuns.has(principal.runId),
+        verification || admissionCurrent(),
         'run_revoked',
         'This run can no longer start commands.',
       );
+      // Recheck inside the admission gate. Identical concurrent requests may
+      // both have passed the earlier lookup before either journal was committed.
+      const replay = await this.lookup(principal, input.operationId);
+      if (replay) {
+        invariant(
+          replay.request_hash === requestHash,
+          'operation_id_conflict',
+          'This operation ID was already used with different arguments.',
+        );
+        return this.operation(principal, input.operationId);
+      }
       if (!verification)
         await this.options.authorize(
           principal,
@@ -1131,6 +1215,33 @@ export class Workspace {
           input.claimId,
           input.dependencies,
         );
+      invariant(
+        verification || admissionCurrent(),
+        'run_revoked',
+        'The run yielded or was revoked while this command was being admitted.',
+      );
+      const maxCommands = this.options.maxCommands ?? 2;
+      const maxQueuedCommands = this.options.maxQueuedCommands ?? 32;
+      const admission = {
+        acceptedCommands: this.commands.size,
+        activeCommands: this.capacity.snapshot().active,
+        maxCommands,
+        maxQueuedCommands,
+        admissionLimit: maxCommands + maxQueuedCommands,
+      };
+      if (admission.acceptedCommands >= admission.admissionLimit) {
+        await this.emit(
+          principal,
+          'workspace.command.rejected',
+          { ...admission, reason: 'command_queue_full', retryable: true },
+          input.operationId,
+        );
+        throw new MeshError(
+          'command_queue_full',
+          'Command admission is full. Poll existing operations or retry this operation ID after capacity is available.',
+          { ...admission, retryable: true },
+        );
+      }
       const journal: CommandJournal = { mode: input.mode, outputDirectory };
       const secrets = Object.entries({ ...process.env, ...(input.env ?? {}) })
         .filter(
@@ -1154,15 +1265,24 @@ export class Workspace {
           secrets,
         ),
         journal,
+        { ...admission, acceptedCommands: admission.acceptedCommands + 1 },
       );
       const key = operationKey(principal, input.operationId);
       // The INSERT decides idempotency even if a duplicate finishes qualification
       // after the original command has already left the in-memory registry.
       if (prepared.created) {
+        // Yield may finish while prepare awaits its journal/event transaction.
+        // A monotonic epoch keeps that earlier request fenced after yieldingRuns
+        // has been cleared, even though it was not yet in the command registry.
+        if (this.closing || (!verification && !admissionCurrent())) {
+          await this.setState(principal, input.operationId, 'cancelled');
+          return this.operation(principal, input.operationId);
+        }
         const running: RunningCommand = {
           principal,
           operationId: input.operationId,
           cancelled: false,
+          capacityAbort: new AbortController(),
         };
         this.commands.set(key, running);
         const execute = () => this.runCommand(running, input, invocation, journal, verification);
@@ -1193,14 +1313,21 @@ export class Workspace {
     journal: CommandJournal,
     verification: boolean,
   ): Promise<void> {
-    const release = await this.capacity.acquire();
+    const capacityBefore = this.capacity.snapshot();
+    const waiting = capacityBefore.active >= (this.options.maxCommands ?? 2);
+    const waitingAt = performance.now();
+    const acquisition = this.capacity.acquire(running.capacityAbort.signal).then((release) => ({
+      release,
+      waitMs: Math.max(0, performance.now() - waitingAt),
+    }));
+    let release: (() => void) | null = null;
     // Source-mutating commands hold the publication gate for their complete lifetime.
     const execute = async () => {
-      this.assertUsable();
       if (running.cancelled) {
         await this.setState(running.principal, input.operationId, 'cancelled');
         return;
       }
+      this.assertUsable();
       if (!verification)
         await this.options.authorize(
           running.principal,
@@ -1210,7 +1337,7 @@ export class Workspace {
           input.dependencies,
         );
       await this.validateFiles(input.dependencies);
-      const before = await this.manifest();
+      const before = await this.sourceManifest(false, running.capacityAbort.signal);
       journal.sourceBefore = before;
       const secrets = Object.entries({ ...process.env, ...invocation.env })
         .filter(
@@ -1231,7 +1358,7 @@ export class Workspace {
         },
         input.operationId,
       );
-      if (running.cancelled || (!verification && this.revokedRuns.has(running.principal.runId))) {
+      if (running.cancelled || (!verification && this.runUnavailable(running.principal.runId))) {
         await this.setState(running.principal, input.operationId, 'cancelled');
         return;
       }
@@ -1241,7 +1368,7 @@ export class Workspace {
         open(stdoutPath, 'a', 0o600),
         open(stderrPath, 'a', 0o600),
       ]);
-      if (running.cancelled || (!verification && this.revokedRuns.has(running.principal.runId))) {
+      if (running.cancelled || (!verification && this.runUnavailable(running.principal.runId))) {
         await Promise.all([stdoutHandle.close(), stderrHandle.close()]);
         await this.setState(running.principal, input.operationId, 'cancelled');
         return;
@@ -1316,7 +1443,7 @@ export class Workspace {
         if (timeoutFailure) throw timeoutFailure;
         await (this.options.terminate ?? terminateProcessTree)(child);
         if (input.mode === 'mutate') this.revision++;
-        const after = await this.manifest();
+        const after = await this.sourceManifest(true);
         const result: CommandResult = {
           exitCode: captures[2].code,
           signal: captures[2].signal,
@@ -1349,10 +1476,40 @@ export class Workspace {
       }
     };
     try {
-      if (input.mode === 'mutate') await this.gated(execute);
+      if (waiting)
+        await this.emit(
+          running.principal,
+          'workspace.command.queued',
+          {
+            reason: 'execution_capacity',
+            activeCommands: capacityBefore.active,
+            waitingCommands: capacityBefore.waiting + 1,
+          },
+          input.operationId,
+        );
+      const acquired = await acquisition;
+      release = acquired.release;
+      if (!release) {
+        await this.setState(running.principal, input.operationId, 'cancelled');
+        return;
+      }
+      await this.emit(
+        running.principal,
+        'workspace.command.capacity_acquired',
+        { waited: waiting, waitMs: acquired.waitMs },
+        input.operationId,
+      );
+      if (input.mode === 'mutate') await this.gated(execute, running.capacityAbort.signal);
       else await execute();
+    } catch (error) {
+      if (error instanceof MeshError && error.code === 'command_cancelled' && running.cancelled)
+        await this.setState(running.principal, input.operationId, 'cancelled');
+      else throw error;
     } finally {
-      release();
+      // An event failure must release an already granted permit or remove a
+      // still-pending waiter before this operation leaves the accepted registry.
+      running.capacityAbort.abort();
+      (release ?? (await acquisition).release)?.();
     }
   }
 
@@ -1455,6 +1612,7 @@ export class Workspace {
     const running = this.commands.get(operationKey(principal, operationId));
     if (running) {
       running.cancelled = true;
+      running.capacityAbort.abort();
       await this.emit(principal, 'workspace.command.cancel_requested', {}, operationId);
       if (running.child) {
         try {
@@ -1463,21 +1621,44 @@ export class Workspace {
           this.quarantine = 'Cancellation could not confirm namespace termination.';
           throw error;
         }
-        if (running.done) await running.done;
-      } else {
-        await this.setState(principal, operationId, 'cancelled');
       }
+      if (running.done) await running.done;
     }
     return this.operation(principal, operationId);
   }
 
+  private runUnavailable(runId: string): boolean {
+    return this.revokedRuns.has(runId) || this.yieldingRuns.has(runId);
+  }
+
+  async yieldRun<T>(runId: string, releaseClaims: () => Promise<T>): Promise<T> {
+    invariant(!this.runUnavailable(runId), 'run_revoked', 'Run is revoked or already yielding.');
+    this.admissionEpochs.set(runId, (this.admissionEpochs.get(runId) ?? 0) + 1);
+    this.yieldingRuns.add(runId);
+    try {
+      await this.drainRun(runId);
+      return await releaseClaims();
+    } finally {
+      // A concurrent supervisor cancellation remains in revokedRuns.
+      this.yieldingRuns.delete(runId);
+    }
+  }
+
   async cancelRun(runId: string): Promise<void> {
+    this.admissionEpochs.set(runId, (this.admissionEpochs.get(runId) ?? 0) + 1);
     this.revokedRuns.add(runId);
+    await this.drainRun(runId);
+  }
+
+  private async drainRun(runId: string): Promise<void> {
     const patch = this.activePatch?.runId === runId ? this.activePatch.done : undefined;
     const commands = [...this.commands.values()].filter(
       (command) => command.principal.runId === runId,
     );
-    for (const command of commands) command.cancelled = true;
+    for (const command of commands) {
+      command.cancelled = true;
+      command.capacityAbort.abort();
+    }
     for (const command of commands) {
       if (command.child) {
         try {
@@ -1488,17 +1669,18 @@ export class Workspace {
         }
       }
     }
-    await Promise.all([
-      ...commands.filter((command) => command.child).map((command) => command.done),
-      patch,
-    ]);
+    await Promise.all([...commands.map((command) => command.done), patch]);
   }
 
   async close(): Promise<void> {
     if (this.closed) return;
     this.closing = true;
     const runIds = new Set([...this.commands.values()].map((command) => command.principal.runId));
-    for (const runId of runIds) await this.cancelRun(runId);
+    // Revoke every owner before awaiting any drain. A command belonging to an
+    // earlier owner can be waiting behind a later owner's publication gate.
+    const drained = await Promise.allSettled([...runIds].map((runId) => this.cancelRun(runId)));
+    const failed = drained.find((result) => result.status === 'rejected');
+    if (failed?.status === 'rejected') throw failed.reason;
     await this.gated(async () => {
       this.closed = true;
       await this.lock.close();

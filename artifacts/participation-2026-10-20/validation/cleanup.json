@@ -1,0 +1,17 @@
+{
+  "removed": [
+    {
+      "path": "/private/tmp/mesh-exec-participation-20261020/candidate/dist",
+      "fileBytes": 588700
+    }
+  ],
+  "freeBytesAfter": 14919528448,
+  "ports": {
+    "56269": "closed",
+    "5432": "listening",
+    "55433": "listening"
+  },
+  "taskProcessesRemaining": 0,
+  "processesStopped": [],
+  "note": "Pilot and peers stopped through runner teardown. No browser started. Shared databases, other chats, root dist, candidate source, runtime, and qualification evidence preserved."
+}

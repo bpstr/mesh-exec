@@ -1,0 +1,42 @@
+{
+  "baseCommit": "2891851072cf877a194fb83505d8a4fbde1a0f2f",
+  "overlaidFiles": [
+    "src/codex.ts",
+    "src/coordination.ts",
+    "src/tools.ts",
+    "src/store.ts",
+    "test/store.test.ts",
+    "test/daemon.test.ts"
+  ],
+  "candidate": "/private/tmp/mesh-exec-coordination-20261020/candidate",
+  "sourceHashes": {
+    "src/a2a.ts": "abbd3b9dd23bbfffacc88c9e839d1133f2825204d1c166ce56087604b31fae59",
+    "src/cli.ts": "377d6a7b295be53e0e8c69a940a4be3af5996c930fb136d26de63ffc70fe6c53",
+    "src/codex.ts": "b4568a7be12b47e8f9542571f785269e28b559db735eb06e02ea70411847b519",
+    "src/completion.ts": "1f0afa5be6d4fe111f7bbf90cfe6f442db40cd614c080f3e159127664b58ab1f",
+    "src/coordination.ts": "25115209076d06469d6d26a1f94446a0ce48aa11c4ea909e5b50d4ddc01386a2",
+    "src/daemon.ts": "52c1c673686e89994a9e008dd122e886c0eacd99942becf67f1cc15870443af8",
+    "src/db.ts": "ff962b2a86e3fa94780683b9cfa5637d64f6efce7e4ef089ba666f80eec4a62b",
+    "src/mailbox-hook.ts": "1c56ebf2f1a81b117c4452f82c266303c73a999ccd24713db489edb81c4999ad",
+    "src/observer.ts": "2d0a386c1f7ce32db0f2b7510e1ac1fa38516f1b6263d5c8bede42e9ac2e5ef5",
+    "src/runner.ts": "5ecb58fd841edf1fcdf04ee4e38ec4cf309ec57f66f1ffd5c95114bb3ec1d96c",
+    "src/sandbox.ts": "4cd6f7e66bc2ade6f53bd72695ce512d28b6d55c66440cf038376a4309568073",
+    "src/schema.ts": "d164323594b38161224629a4945dcd8be4725c2e41d5d73775e88d7d50d1ba9d",
+    "src/store.ts": "857113eee8aaa2bc2f4caefdbe5731eb3428c91312bc0a44358c94af1042573d",
+    "src/tools.ts": "44ba851c3142137ccd4e98256855929bbdc012854b84a45947af0c4a3c323025",
+    "src/trace.ts": "4ac50a715255d8412a3b579cc2039254560990937f43b5c7d8d51bdbc4db704b",
+    "src/types.ts": "0cd8012f64ee512de963ca9f047a3bf932254eba47ea5ceea28263237affd623",
+    "src/workspace.ts": "821ded60d139272beab30cdf651e0800a7b848552c9d028ac8b7ff0d63d66b9b",
+    "test/a2a.test.ts": "0e752a88106fbfd315587cce71468e299d582b1d436408c2132fe994cf955b93",
+    "test/codex.test.ts": "0e03e9fa92d590668ad7f10941e4fba613725e884f178c1bb52b6493ea164956",
+    "test/daemon.test.ts": "1f7ceb6d84beed439f93a116d24ec902eaa82b2d17640ca29dc5ff4f2d4b7f5e",
+    "test/helpers.ts": "bb60c1c88619af97999995ce725be91950cd2ec5191eda113bae0ffa9460f19c",
+    "test/mailbox-hook.test.ts": "555c2e0bd7f7cbabd99f89f0e1a6c20b11e66a1a85ec268bc2d86e004187d9dd",
+    "test/runner.test.ts": "2cb79d6b53bea3f9e1d0b13ac41651b2838d780cd977a2d220f7011a602883c0",
+    "test/sandbox.test.ts": "6ca76341214c205473ce1d8c6aec10a1f4b8fa8b34ad643b182cd5bfc114e2d4",
+    "test/store.test.ts": "96b195acc2a22240cd3c694485eb6ddf16b48e754e099a1b38fe30ed8c508a9f",
+    "test/trace.test.ts": "0b7cf5feb13e2bd51fb939fe601a428bba5ae9f37bf2ea5ca680eaa384845e32",
+    "test/workspace.test.ts": "27033550726f190d134e94c9d9dc0baaabbf22ce2628f1c61281f6636ea7e11c"
+  },
+  "comparison": "Frozen baseline runner plus this task coordination changes; concurrent timeout work excluded."
+}

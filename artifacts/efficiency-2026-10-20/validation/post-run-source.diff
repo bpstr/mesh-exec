@@ -1,0 +1,58 @@
+diff --git a/private/tmp/mesh-exec-efficiency-20261020/candidate/src/coordination.ts b/Users/bpstr/Github/mesh-exec/src/coordination.ts
+index 22e45ec..cc6d442 100644
+--- a/private/tmp/mesh-exec-efficiency-20261020/candidate/src/coordination.ts
++++ b/Users/bpstr/Github/mesh-exec/src/coordination.ts
+@@ -5,7 +5,7 @@ export const coordinationInstructions = [
+   'Prefer unclaimed implementation or test work while it remains, then independent review. Claim repository-relative file paths or subtree/**; reserve resource:name for coordination. On conflict use the returned owner and choose another contribution. Claims and checkpoints communicate routine progress.',
+   'One peer should claim resource:integration and steward definition and final acceptance. This is a peer-selected responsibility, not extra authority. Arrange independent requirement and coverage reviewers early with live peers listed in board.participation.livePeerIds. Contributors become available reviewers after releasing their write claims; they do not leave the team.',
+   'Define the smallest complete set of requirements anchored to original roadmap text, with observable criteria. Reuse existing definitions. Their steward consolidates evidence and marks them implemented once the source is ready; reviewers record reviews instead of rewriting requirements.',
+-  'Use guarded mesh_read/mesh_patch and mesh_exec for shared-workspace changes and commands. Batch related reads and edits. Choose one verification contributor; other peers inspect shared results. Reuse passing evidence on the same source manifest. Repeat only for changed inputs, failures, or the mandatory final acceptance check.',
++  'Use guarded mesh_read/mesh_patch and mesh_exec for shared-workspace changes and commands. Batch related reads and edits. Choose one verification contributor; other peers inspect shared results. mesh_exec returns a running operation, not a test result: inspect mesh_operation until terminal before claiming success or yielding. mesh_yield cancels your outstanding commands, so do not yield while useful verification is running. Reuse passing evidence on the same source manifest. Repeat only for changed inputs, failures, or the mandatory final acceptance check.',
+   'Use mesh_board at a work transition: it includes inbox, consultations, reviews, operation summaries, and participation state. When no useful independent work remains, call mesh_wait with the latest workRevision as sinceRevision and waitMs=20000. This blocks inside your existing process and wakes on mail, shared changes, or termination. After timeout, wait again without rereading the board or writing another checkpoint. After shared-work changes, read the board; after inbox delivery, handle the returned messages.',
+   'Send a consultation only when a specific peer action or answer is needed; use checkpoints for status. Answer requests with mesh_reply state=completed and the incoming deliveryId to atomically acknowledge them; use mesh_ack for terminal answers. Acknowledging a request does not close its task. Terminal replies need acknowledgment, not another reply.',
+   'Treat tool errors as failed actions: correct the reported cause before claiming publication or recording evidence. Before final reviews, finish source changes and requirement evidence, then release claims with mesh_yield (this does not end your process). Reclaim paths before any later correction. Read mesh_board with detail=full for requirement evidence and review reasoning; routine summaries omit these details. Review only implemented requirement revisions against the final manifest; independently review roadmap coverage too. Reuse an existing independent passing review for that exact revision and manifest instead of duplicating it. Meaningful corrections require fresh affected reviews.',
+diff --git a/private/tmp/mesh-exec-efficiency-20261020/candidate/src/tools.ts b/Users/bpstr/Github/mesh-exec/src/tools.ts
+index 1176424..12b79ff 100644
+--- a/private/tmp/mesh-exec-efficiency-20261020/candidate/src/tools.ts
++++ b/Users/bpstr/Github/mesh-exec/src/tools.ts
+@@ -180,6 +180,8 @@ export class MeshTools {
+           try {
+             const finishing =
+               name === 'mesh_wait' ||
++              name === 'mesh_board' ||
++              name === 'mesh_yield' ||
+               name === 'mesh_checkpoint' ||
+               (name === 'mesh_operation' && !(input as { cancel?: boolean }).cancel);
+             await this.store.assertActive(p, this.store.db, true, finishing);
+@@ -187,7 +189,30 @@ export class MeshTools {
+               p,
+               `tool.${name}`,
+               { arguments: input },
+-              () => body(input),
++              async () => {
++                // A peer may finish its normal checkpoint/yield sequence just
++                // after acceptance. Report terminal state without mutating it
++                // or entering the now-closed workspace/A2A services.
++                if (name === 'mesh_board' || name === 'mesh_yield') {
++                  const state = await this.store.observe(p.missionId);
++                  if (state.state === 'completed') {
++                    const participation = await this.participation(p);
++                    return name === 'mesh_yield'
++                      ? participation
++                      : {
++                          terminal: true,
++                          mission: {
++                            id: p.missionId,
++                            state: state.state,
++                            revision: state.workRevision,
++                          },
++                          workRevision: state.workRevision,
++                          participation,
++                        };
++                  }
++                }
++                return body(input);
++              },
+             );
+             return { content: [{ type: 'text', text: JSON.stringify(result ?? { ok: true }) }] };
+           } catch (error) {

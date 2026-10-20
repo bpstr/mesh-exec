@@ -27,6 +27,7 @@ export interface DaemonOptions {
   port?: number;
   config?: Record<string, unknown>;
   maxCommands?: number;
+  maxQueuedCommands?: number;
   workspace?: Partial<Pick<WorkspaceOptions, 'commandBuilder' | 'terminate' | 'lockDirectory'>>;
 }
 export interface RunningDaemon {
@@ -124,6 +125,7 @@ export async function startDaemon(options: DaemonOptions): Promise<RunningDaemon
     events: workspaceEvents,
     authorize: (...args) => store.authorize(...args),
     maxCommands: options.maxCommands,
+    maxQueuedCommands: options.maxQueuedCommands,
     ...options.workspace,
   });
   let server: Server | undefined;
@@ -219,7 +221,13 @@ export async function startDaemon(options: DaemonOptions): Promise<RunningDaemon
       baseUrl: url,
     });
     completion = new Completion(store, workspace);
-    const meshTools = new MeshTools(store, a2a, workspace, completion);
+    const workflow = (await store.mission(missionId)).config.workflow ?? 'implementation';
+    invariant(
+      workflow === 'implementation' || workflow === 'discussion',
+      'INVALID_WORKFLOW',
+      'Workflow must be implementation or discussion',
+    );
+    const meshTools = new MeshTools(store, a2a, workspace, completion, workflow);
     const a2aRouter = a2a.router();
     app.use((req, res, next) => {
       if (req.path.startsWith('/agents/')) a2aRouter(req, res, next);
@@ -232,7 +240,9 @@ export async function startDaemon(options: DaemonOptions): Promise<RunningDaemon
       next: express.NextFunction,
     ) => {
       try {
-        res.locals.principal = await store.authenticate(bearer(req));
+        // Only MCP has a narrow post-acceptance tool allowlist. A2A/mailbox
+        // authentication retains the active/closing-only policy.
+        res.locals.principal = await store.authenticate(bearer(req), req.path === '/mcp');
         next();
       } catch (error) {
         await store
@@ -434,7 +444,19 @@ export async function startDaemon(options: DaemonOptions): Promise<RunningDaemon
       JSON.stringify({ missionId, url, operatorToken, pid: process.pid, repo }, null, 2) + '\n',
       { mode: 0o600 },
     );
-    await store.events({ missionId, kind: 'daemon.ready', data: { url, repo, pid: process.pid } });
+    await store.events({
+      missionId,
+      kind: 'daemon.ready',
+      data: {
+        url,
+        repo,
+        pid: process.pid,
+        commandCapacity: {
+          maxCommands: options.maxCommands ?? 2,
+          maxQueuedCommands: options.maxQueuedCommands ?? 32,
+        },
+      },
+    });
     ready = true;
     let closed = false;
     return {

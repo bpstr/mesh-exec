@@ -104,9 +104,17 @@ export interface SendInput {
 export interface ReplyInput {
   taskId: string;
   messageId?: string;
+  /** Acknowledge this incoming request atomically with its reply. */
+  deliveryId?: string;
   text?: string;
   data?: unknown;
   state?: 'completed' | 'working' | 'input-required' | 'rejected' | 'failed';
+}
+
+interface AckInput {
+  deliveryId: string;
+  disposition?: 'handled' | 'deferred' | 'rejected' | 'superseded';
+  reason?: string;
 }
 
 export interface CancelInput {
@@ -422,6 +430,23 @@ export class A2aService {
       await this.options.validatePrincipal(tx, principal);
       const row = await this.taskRow(tx, principal, principal.agentId, taskId, true);
       if (row.recipient_id !== principal.agentId) throw new TaskNotFoundError();
+      if (input.deliveryId) {
+        const delivery = await tx.query(
+          'SELECT delivery_id FROM mailbox_deliveries WHERE delivery_id=$1 AND mission_id=$2 AND recipient_id=$3 AND task_id=$4 AND sender_id=$5',
+          [
+            id(input.deliveryId, 'deliveryId'),
+            principal.missionId,
+            principal.agentId,
+            taskId,
+            row.sender_id,
+          ],
+        );
+        if (!delivery.rowCount)
+          throw new MeshError(
+            'INVALID_REPLY_DELIVERY',
+            'Delivery must be an incoming request for this task.',
+          );
+      }
       const message = Message.fromJSON({
         messageId,
         taskId,
@@ -432,7 +457,11 @@ export class A2aService {
       });
       validateMessage(message, Role.ROLE_AGENT);
       const wireMessage = Message.toJSON(message);
-      const payloadHash = hash({ message: wireMessage, state });
+      const payloadHash = hash({
+        message: wireMessage,
+        state,
+        ...(input.deliveryId ? { deliveryId: input.deliveryId } : {}),
+      });
       const prior = (
         await tx.query<{ payload_hash: string; accepted_result: unknown }>(
           'SELECT payload_hash,accepted_result FROM a2a_messages WHERE mission_id=$1 AND sender_id=$2 AND recipient_id=$3 AND message_id=$4',
@@ -441,6 +470,8 @@ export class A2aService {
       ).rows[0];
       if (prior) {
         requireSamePayload(prior.payload_hash, payloadHash);
+        if (input.deliveryId)
+          await this.acknowledge(tx, principal, { deliveryId: input.deliveryId });
         await this.trace(tx, principal, 'message.reply.replayed', row.trace_id, messageId, taskId, {
           result: prior.accepted_result,
         });
@@ -450,10 +481,12 @@ export class A2aService {
           contextId: row.context_id,
           task: prior.accepted_result,
           replayed: true,
+          ...(input.deliveryId ? { acknowledgedDeliveryId: input.deliveryId } : {}),
         };
       }
       if (terminal.has(row.state))
         throw new UnsupportedOperationError('A terminal task cannot receive another reply.');
+      if (input.deliveryId) await this.acknowledge(tx, principal, { deliveryId: input.deliveryId });
       const task = Task.fromJSON(row.task);
       task.history.push(message);
       task.status = { state, message, timestamp: new Date().toISOString() };
@@ -504,6 +537,7 @@ export class A2aService {
         deliveryId,
         task: wireTask,
         replayed: false,
+        ...(input.deliveryId ? { acknowledgedDeliveryId: input.deliveryId } : {}),
       };
     });
   }
@@ -522,8 +556,21 @@ export class A2aService {
     return { taskId: task.id, contextId: task.contextId, task: Task.toJSON(task) };
   }
 
-  async poll(principal: Principal, input: { limit?: number } = {}) {
+  async poll(principal: Principal, input: { limit?: number; waitMs?: number } = {}) {
     const limit = boundedLimit(input.limit, 32, 128);
+    const waitMs = input.waitMs ?? 0;
+    if (!Number.isInteger(waitMs) || waitMs < 0 || waitMs > 30_000)
+      throw new RequestMalformedError('waitMs must be an integer from 0 to 30000.');
+    const deadline = Date.now() + waitMs;
+    while (Date.now() < deadline) {
+      await this.options.validatePrincipal(this.options.db, principal);
+      const pending = await this.options.db.query(
+        'SELECT delivery_id FROM mailbox_deliveries WHERE mission_id=$1 AND recipient_id=$2 AND handled_at IS NULL LIMIT 1',
+        [principal.missionId, principal.agentId],
+      );
+      if (pending.rowCount) break;
+      await delay(Math.max(0, Math.min(250, deadline - Date.now())));
+    }
     return this.options.db.transaction(async (tx) => {
       await lockMission(tx, principal.missionId);
       await this.options.validatePrincipal(tx, principal);
@@ -594,52 +641,49 @@ export class A2aService {
     });
   }
 
-  async ack(
-    principal: Principal,
-    input: {
-      deliveryId: string;
-      disposition?: 'handled' | 'deferred' | 'rejected' | 'superseded';
-      reason?: string;
-    },
-  ) {
-    const disposition = input.disposition ?? 'handled';
-    if (!['handled', 'deferred', 'rejected', 'superseded'].includes(disposition))
-      throw new MeshError('INVALID_DISPOSITION', 'Invalid message disposition.');
+  async ack(principal: Principal, input: AckInput) {
     return this.options.db.transaction(async (tx) => {
       await lockMission(tx, principal.missionId);
       await this.options.validatePrincipal(tx, principal);
-      const row = (
-        await tx.query<DeliveryRow>(
-          'SELECT * FROM mailbox_deliveries WHERE delivery_id=$1 AND mission_id=$2 AND recipient_id=$3 FOR UPDATE',
-          [id(input.deliveryId, 'deliveryId'), principal.missionId, principal.agentId],
-        )
-      ).rows[0];
-      if (!row) throw new MeshError('NOT_FOUND', 'Mailbox delivery not found.');
-      if (row.handled_at) {
-        if (row.disposition !== disposition)
-          throw new MeshError(
-            'DISPOSITION_CONFLICT',
-            'The delivery already has a final disposition.',
-          );
-        return { deliveryId: row.delivery_id, disposition, replayed: true };
-      }
-      await tx.query(
-        `UPDATE mailbox_deliveries SET disposition=$1,disposition_reason=$2,handled_run_id=$3,
-         handled_at=CASE WHEN $1='deferred' THEN NULL ELSE now() END WHERE delivery_id=$4`,
-        [disposition, input.reason ?? null, principal.runId, row.delivery_id],
-      );
-      if (disposition !== 'deferred') await changed(tx, principal.missionId);
-      await this.trace(
-        tx,
-        principal,
-        'message.acknowledged',
-        row.trace_id,
-        row.message_id,
-        row.task_id,
-        { deliveryId: row.delivery_id, disposition, reason: input.reason ?? null },
-      );
-      return { deliveryId: row.delivery_id, disposition, replayed: false };
+      return this.acknowledge(tx, principal, input);
     });
+  }
+
+  private async acknowledge(tx: Sql, principal: Principal, input: AckInput) {
+    const disposition = input.disposition ?? 'handled';
+    if (!['handled', 'deferred', 'rejected', 'superseded'].includes(disposition))
+      throw new MeshError('INVALID_DISPOSITION', 'Invalid message disposition.');
+    const row = (
+      await tx.query<DeliveryRow>(
+        'SELECT * FROM mailbox_deliveries WHERE delivery_id=$1 AND mission_id=$2 AND recipient_id=$3 FOR UPDATE',
+        [id(input.deliveryId, 'deliveryId'), principal.missionId, principal.agentId],
+      )
+    ).rows[0];
+    if (!row) throw new MeshError('NOT_FOUND', 'Mailbox delivery not found.');
+    if (row.handled_at) {
+      if (row.disposition !== disposition)
+        throw new MeshError(
+          'DISPOSITION_CONFLICT',
+          'The delivery already has a final disposition.',
+        );
+      return { deliveryId: row.delivery_id, disposition, replayed: true };
+    }
+    await tx.query(
+      `UPDATE mailbox_deliveries SET disposition=$1,disposition_reason=$2,handled_run_id=$3,
+     handled_at=CASE WHEN $1='deferred' THEN NULL ELSE now() END WHERE delivery_id=$4`,
+      [disposition, input.reason ?? null, principal.runId, row.delivery_id],
+    );
+    if (disposition !== 'deferred') await changed(tx, principal.missionId);
+    await this.trace(
+      tx,
+      principal,
+      'message.acknowledged',
+      row.trace_id,
+      row.message_id,
+      row.task_id,
+      { deliveryId: row.delivery_id, disposition, reason: input.reason ?? null },
+    );
+    return { deliveryId: row.delivery_id, disposition, replayed: false };
   }
 
   /** Called periodically and on daemon startup; expired attempts are safely replayed. */

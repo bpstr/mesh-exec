@@ -1,0 +1,822 @@
+diff --git a/README.md b/README.md
+index 27e9c0a..5d886e8 100644
+--- a/README.md
++++ b/README.md
+@@ -144,6 +144,15 @@ Set `--agents 100 --max-runs 1000` to configure a hundred slots and ten generati
+ 
+ The optional [configuration example](examples/mesh.config.json) uses the same settings in JSON. Explicit command-line values take precedence for the corresponding invocation settings.
+ 
++After acceptance, existing agents have up to 30 seconds to save final checkpoints,
++emit structured handoffs and report CLI token usage. Set `completionGraceMs` in
++the JSON configuration to change this window. It is capped by the remaining
++mission time; acceptance never extends `--timeout` or `--max-minutes`. New runs
++and workspace work remain closed, and operator cancellation still stops agents
++immediately. A peer that exceeds either deadline is terminated, so a usage receipt
++is only available if the CLI emits it in time. See the
++[offline shutdown validation](artifacts/shutdown-2026-10-20/REPORT.md).
++
+ ### Stop and resume
+ 
+ Press `Ctrl-C` to stop admission and terminate managed processes. Budget exhaustion, failure, and operator stop leave a non-completed mission with its durable history available.
+@@ -187,4 +196,4 @@ The supported baseline handles inbox messages explicitly at work transitions. Id
+ 
+ The source manifest includes Git-tracked paths and untracked paths that are not ignored, with content hashes, types, and modes. Ignored dependencies, ignored generated outputs, external services, and arbitrary host state are outside that source basis. `mesh_patch` publishes complete UTF-8 file replacements or deletions; it is not a binary-file editing API. All agent writes use the guarded workspace service, and only one daemon owns the checkout. An unrelated host process writing into the checkout is outside this coordination contract.
+ 
+-The automated suite uses PGlite for datastore fixtures, actual local A2A HTTP with the official SDK, real MCP clients, and controlled worker-process substitutes. [CI](https://github.com/bpstr/mesh-exec/actions/workflows/ci.yml) passes 40 tests on Linux with Node 22/24 and PostgreSQL 17, and on macOS with Node 24. Both platforms require real OS confinement tests without skips. The live pilot used Codex CLI 0.160.0 and PostgreSQL 18.6 on macOS; its complete conversations, tool activity, code, usage receipts, and unresolved acceptance state are preserved in the repository. Optional hooks and sustained 10/50/100-agent operation still need qualification.
++The automated suite uses PGlite for datastore fixtures, actual local A2A HTTP with the official SDK, real MCP clients, and controlled worker-process substitutes. [CI](https://github.com/bpstr/mesh-exec/actions/workflows/ci.yml) passes 40 tests on Linux with Node 22/24 and PostgreSQL 17, and on macOS with Node 24. Both platforms require real OS confinement tests without skips. The [five-agent Sol 6.1 sample run](artifacts/efficiency-2026-10-20/REPORT.md) reached acceptance, passed all 12 generated tests, and captured all five final handoffs and usage receipts using Codex CLI 0.160.0 on macOS. Earlier failed runs remain preserved. This supports a bounded real-project pilot; optional hooks, production workloads, and sustained 10/50/100-agent operation still need qualification.
+diff --git a/docs/coordination.md b/docs/coordination.md
+index 67f28ca..0464b20 100644
+--- a/docs/coordination.md
++++ b/docs/coordination.md
+@@ -1,5 +1,19 @@
+ # Shared coordination
+ 
++The board defaults to `detail: "summary"` for routine coordination. Requirements
++retain their criteria, revision, author and state, with `evidenceCount` in place
++of repeated evidence. Passing review reasoning is omitted; objection reasoning
++remains visible. Use `mesh_board` with `detail: "full"` before reviewing evidence
++or investigating review reasoning. This explicit request bypasses
++`sinceRevision` suppression. Durable records and final acceptance use the full
++evidence regardless of the display mode.
++
++After acceptance, a still-leased peer can call `mesh_board` or `mesh_yield`
++to receive terminal participation state. The terminal board has `terminal: true`
++and contains mission state, work revision and participation, without discovery
++lists. Terminal yield is a no-op. Both remain fenced by run identity and lease;
++neither reopens work or changes the accepted revision.
++
+ Every mission receives the same [runner instructions](../src/coordination.ts).
+ The roadmap supplies product scope and acceptance criteria. It does not need
+ agent assignments, a prescribed requirement ID, or a task-specific messaging
+@@ -43,6 +57,18 @@ path; a durable message alone cannot revive that process. These protocol rules
+ guide agents but cannot prevent a crash or an agent ignoring the exit policy.
+ The acceptance barrier remains the authority for completion in either case.
+ 
++After successful acceptance, the runner closes launch admission and drains the
++existing processes for up to `completionGraceMs` (default 30,000 milliseconds),
++capped by the original mission deadline. It keeps leases and output capture
++active so peers can finish their structured handoffs and emit CLI usage receipts.
++`mesh_wait` returns the terminal outcome and `mayExit: true`; `mesh_operation`
++can read an existing result, and `mesh_checkpoint` can save final audit metadata.
++Other tools, including operation cancellation, remain closed. Final checkpoints
++do not change the accepted evidence. Expired or fenced runs cannot use this
++access. A2A messaging is also closed: consultations and acknowledgments must
++already be settled before acceptance. The grace period ends early when every
++peer exits; operator cancellation and existing per-run timeouts still apply.
++
+ Checkpoints require a nonempty object. Omitted or malformed bodies are rejected
+ at the tool boundary before persistence.
+ 
+diff --git a/docs/observability.md b/docs/observability.md
+index 7737bab..d16b3a3 100644
+--- a/docs/observability.md
++++ b/docs/observability.md
+@@ -137,6 +137,17 @@ Trace-only export follows all matching pages instead of stopping at the display
+ 
+ ## Metrics and local HTTP access
+ 
++Status and exported `mission.json` include `usage`: valid and malformed
++`codex.turn.completed` receipt counts, runs with and without a valid receipt,
++and reported input, cached input, output, and total tokens. Cached input is
++already included in input; total is input plus output. These are observed
++receipts, not an estimate of missing usage or a monetary charge. A killed worker
++may have consumed tokens without emitting a receipt.
++
++Metrics expose the same evidence as `mesh_usage_runs`, `mesh_usage_receipts`,
++and `mesh_reported_tokens`. Always read the receipt coverage alongside the
++token totals; zero reported tokens does not prove zero consumption.
++
+ ```bash
+ mesh metrics --mission MISSION_ID
+ ```
+@@ -165,4 +176,15 @@ For duplicate-looking messages, compare `messageId`, `taskId`, outbox attempt ID
+ 
+ For a failed completion attempt, inspect its operation ID and `completion.proposal.*` events, the current requirement/coverage evidence, unhandled mail, open consultations, and verification logs. Completion failure and budget exhaustion remain recorded outcomes rather than being converted into success.
+ 
++After acceptance, `supervisor.draining` records the allowed `graceMs`, remaining
++mission budget in `remainingMs`, and unchanged wall-clock `deadlineAt`. During
++this phase, final checkpoints, `result.json` handoffs and `codex.turn.completed`
++usage events can still arrive from existing peers. No new run is admitted.
++`supervisor.ended.shutdownReason` distinguishes grace expiry, the original
++deadline and operator cancellation when shutdown interrupts a peer. These
++interruptions preserve the completed mission state; inspect `run.process.ended`
++to distinguish a normal exit from a terminated peer. Missing usage receipts
++remain unknown, including after a crash or deadline; acceptance alone does not
++establish token totals. Historical runs retain their original missing receipts.
++
+ For a parked population, check the semantic revision and pending messages before interpreting low CPU usage as a failure. Blocked runs park; an idle exit starts a fresh generation while admission remains open. Source-publication or process-recovery quarantine needs investigation before new writers can be admitted.
+diff --git a/src/cli.ts b/src/cli.ts
+index 2555f57..a25ac89 100644
+--- a/src/cli.ts
++++ b/src/cli.ts
+@@ -310,6 +310,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
+             ...budget,
+             runTimeoutMs:
+               numberOption(values['run-minutes'] ?? config.runMinutes, 20, 'run-minutes') * 60_000,
++            completionGraceMs: numberOption(config.completionGraceMs, 30_000, 'completionGraceMs'),
+             codexBinary,
+             model: values.model ?? (config.model as string | undefined),
+             hiddenPaths: [runtimeDir],
+diff --git a/src/coordination.ts b/src/coordination.ts
+index 361395a..cc6d442 100644
+--- a/src/coordination.ts
++++ b/src/coordination.ts
+@@ -5,10 +5,10 @@ export const coordinationInstructions = [
+   'Prefer unclaimed implementation or test work while it remains, then independent review. Claim repository-relative file paths or subtree/**; reserve resource:name for coordination. On conflict use the returned owner and choose another contribution. Claims and checkpoints communicate routine progress.',
+   'One peer should claim resource:integration and steward definition and final acceptance. This is a peer-selected responsibility, not extra authority. Arrange independent requirement and coverage reviewers early with live peers listed in board.participation.livePeerIds. Contributors become available reviewers after releasing their write claims; they do not leave the team.',
+   'Define the smallest complete set of requirements anchored to original roadmap text, with observable criteria. Reuse existing definitions. Their steward consolidates evidence and marks them implemented once the source is ready; reviewers record reviews instead of rewriting requirements.',
+-  'Use guarded mesh_read/mesh_patch and mesh_exec for shared-workspace changes and commands. Batch related reads and edits. Choose one verification contributor; other peers inspect shared results. Reuse passing evidence on the same source manifest. Repeat only for changed inputs, failures, or the mandatory final acceptance check.',
++  'Use guarded mesh_read/mesh_patch and mesh_exec for shared-workspace changes and commands. Batch related reads and edits. Choose one verification contributor; other peers inspect shared results. mesh_exec returns a running operation, not a test result: inspect mesh_operation until terminal before claiming success or yielding. mesh_yield cancels your outstanding commands, so do not yield while useful verification is running. Reuse passing evidence on the same source manifest. Repeat only for changed inputs, failures, or the mandatory final acceptance check.',
+   'Use mesh_board at a work transition: it includes inbox, consultations, reviews, operation summaries, and participation state. When no useful independent work remains, call mesh_wait with the latest workRevision as sinceRevision and waitMs=20000. This blocks inside your existing process and wakes on mail, shared changes, or termination. After timeout, wait again without rereading the board or writing another checkpoint. After shared-work changes, read the board; after inbox delivery, handle the returned messages.',
+   'Send a consultation only when a specific peer action or answer is needed; use checkpoints for status. Answer requests with mesh_reply state=completed and the incoming deliveryId to atomically acknowledge them; use mesh_ack for terminal answers. Acknowledging a request does not close its task. Terminal replies need acknowledgment, not another reply.',
+-  'Treat tool errors as failed actions: correct the reported cause before claiming publication or recording evidence. Before final reviews, finish source changes and requirement evidence, then release claims with mesh_yield (this does not end your process). Reclaim paths before any later correction. Review the exact implemented requirement revisions and final manifest; independently review roadmap coverage too. Meaningful corrections require fresh affected reviews.',
++  'Treat tool errors as failed actions: correct the reported cause before claiming publication or recording evidence. Before final reviews, finish source changes and requirement evidence, then release claims with mesh_yield (this does not end your process). Reclaim paths before any later correction. Read mesh_board with detail=full for requirement evidence and review reasoning; routine summaries omit these details. Review only implemented requirement revisions against the final manifest; independently review roadmap coverage too. Reuse an existing independent passing review for that exact revision and manifest instead of duplicating it. Meaningful corrections require fresh affected reviews.',
+   'Every implementation peer stays available until mission acceptance or an explicit operator stop, even with an empty inbox or completed local work. Review the ready work of other peers without waiting for a personal invitation; never review your own requirement evidence. If a requested reviewer is no longer live, route the request to another live independent peer and close the obsolete consultation. The integration peer stays through mesh_propose_completion and its mesh_operation terminal result, resolves concrete blockers, and checkpoints the outcome. Only a successful acceptance result completes the mission.',
+   'After local work, record one concise checkpoint with evidence and unresolved dependencies, release claims with mesh_yield, then continue with mesh_wait. A timeout, released claim, idle slot, or empty inbox does not authorize a final response. Do not exit while participation.mayExit=false, including while acceptance is closing. Waits remain interruptible by the supervisor deadline. Once the mission is terminal, report its actual outcome and use the returned workRevision in final work_revision; never claim completion from local tests alone.',
+   'Do not start other agent CLIs or subagents. The runner owns the population. Your structured final message is a handoff, not mission acceptance.',
+diff --git a/src/daemon.ts b/src/daemon.ts
+index d210c52..c61517e 100644
+--- a/src/daemon.ts
++++ b/src/daemon.ts
+@@ -194,7 +194,9 @@ export async function startDaemon(options: DaemonOptions): Promise<RunningDaemon
+       next: express.NextFunction,
+     ) => {
+       try {
+-        res.locals.principal = await store.authenticate(bearer(req));
++        // Only MCP has a narrow post-acceptance tool allowlist. A2A/mailbox
++        // authentication retains the active/closing-only policy.
++        res.locals.principal = await store.authenticate(bearer(req), req.path === '/mcp');
+         next();
+       } catch (error) {
+         await store
+diff --git a/src/observer.ts b/src/observer.ts
+index 9693472..f575e0e 100644
+--- a/src/observer.ts
++++ b/src/observer.ts
+@@ -6,38 +6,88 @@ import { readEvents, redact, type TraceFilter } from './trace.js';
+ import type { Database, Sql } from './types.js';
+ import { invariant } from './types.js';
+ 
++/** CLI receipts only: missing/interrupted usage is unknown, never estimated as zero. */
++export async function usage(db: Sql, missionId: string) {
++  const result = await db.query<{ id: string; receipts: unknown[] }>(
++    `SELECT r.id, COALESCE(jsonb_agg(t.data->'event'->'usage')
++       FILTER (WHERE t.seq IS NOT NULL), '[]'::jsonb) AS receipts
++     FROM runs r LEFT JOIN trace_events t ON t.mission_id=r.mission_id
++       AND t.run_id=r.id AND t.kind='codex.turn.completed'
++     WHERE r.mission_id=$1 GROUP BY r.id ORDER BY r.id`,
++    [missionId],
++  );
++  let validReceipts = 0;
++  let invalidReceipts = 0;
++  let runsWithUsage = 0;
++  const reportedTokens = { input: 0, cachedInput: 0, output: 0, total: 0 };
++  for (const run of result.rows) {
++    let reported = false;
++    for (const receipt of run.receipts) {
++      const r = receipt as Record<string, unknown> | null;
++      const values = [r?.input_tokens, r?.cached_input_tokens, r?.output_tokens];
++      if (
++        !values.every((v) => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0) ||
++        (r!.cached_input_tokens as number) > (r!.input_tokens as number)
++      ) {
++        invalidReceipts++;
++        continue;
++      }
++      const [input, cached, output] = values as number[];
++      reportedTokens.input += input;
++      reportedTokens.cachedInput += cached;
++      reportedTokens.output += output;
++      reportedTokens.total += input + output; // Cached input is already part of input.
++      validReceipts++;
++      reported = true;
++    }
++    if (reported) runsWithUsage++;
++  }
++  return {
++    source: 'codex.turn.completed',
++    runs: result.rows.length,
++    runsWithUsage,
++    runsWithoutUsage: result.rows.length - runsWithUsage,
++    validReceipts,
++    invalidReceipts,
++    reportedTokens,
++    note: 'Reported receipts only; unreported usage and monetary cost are unknown.',
++  };
++}
++
+ export async function status(db: Sql, missionId: string): Promise<Record<string, unknown>> {
+-  const [mission, runs, slots, requirements, messages, outbox, operations] = await Promise.all([
+-    db.query(
+-      'SELECT id,repo,roadmap_path,roadmap_hash,state,revision,config,created_at,updated_at,acceptance FROM missions WHERE id=$1',
+-      [missionId],
+-    ),
+-    db.query(
+-      'SELECT state,count(*)::integer AS count FROM runs WHERE mission_id=$1 GROUP BY state',
+-      [missionId],
+-    ),
+-    db.query(
+-      'SELECT id,generation,state,active_run_id,handoff FROM slots WHERE mission_id=$1 ORDER BY id',
+-      [missionId],
+-    ),
+-    db.query(
+-      'SELECT state,count(*)::integer AS count FROM requirements WHERE mission_id=$1 GROUP BY state',
+-      [missionId],
+-    ),
+-    db.query(
+-      `SELECT count(*)::integer AS total,count(*) FILTER(WHERE handled_at IS NULL)::integer AS pending,
++  const [mission, runs, slots, requirements, messages, outbox, operations, tokenUsage] =
++    await Promise.all([
++      db.query(
++        'SELECT id,repo,roadmap_path,roadmap_hash,state,revision,config,created_at,updated_at,acceptance FROM missions WHERE id=$1',
++        [missionId],
++      ),
++      db.query(
++        'SELECT state,count(*)::integer AS count FROM runs WHERE mission_id=$1 GROUP BY state',
++        [missionId],
++      ),
++      db.query(
++        'SELECT id,generation,state,active_run_id,handoff FROM slots WHERE mission_id=$1 ORDER BY id',
++        [missionId],
++      ),
++      db.query(
++        'SELECT state,count(*)::integer AS count FROM requirements WHERE mission_id=$1 GROUP BY state',
++        [missionId],
++      ),
++      db.query(
++        `SELECT count(*)::integer AS total,count(*) FILTER(WHERE handled_at IS NULL)::integer AS pending,
+       EXTRACT(EPOCH FROM now()-min(created_at) FILTER(WHERE handled_at IS NULL)) AS oldest_pending_seconds FROM mailbox_deliveries WHERE mission_id=$1`,
+-      [missionId],
+-    ),
+-    db.query(
+-      'SELECT state,count(*)::integer AS count,sum(attempts)::integer AS attempts FROM a2a_outbox WHERE mission_id=$1 GROUP BY state',
+-      [missionId],
+-    ),
+-    db.query(
+-      'SELECT kind,state,count(*)::integer AS count FROM workspace_operations WHERE mission_id=$1 GROUP BY kind,state',
+-      [missionId],
+-    ),
+-  ]);
++        [missionId],
++      ),
++      db.query(
++        'SELECT state,count(*)::integer AS count,sum(attempts)::integer AS attempts FROM a2a_outbox WHERE mission_id=$1 GROUP BY state',
++        [missionId],
++      ),
++      db.query(
++        'SELECT kind,state,count(*)::integer AS count FROM workspace_operations WHERE mission_id=$1 GROUP BY kind,state',
++        [missionId],
++      ),
++      usage(db, missionId),
++    ]);
+   invariant(mission.rows[0], 'NOT_FOUND', 'Mission does not exist');
+   return {
+     mission: mission.rows[0],
+@@ -47,6 +97,7 @@ export async function status(db: Sql, missionId: string): Promise<Record<string,
+     messages: messages.rows[0],
+     outbox: outbox.rows,
+     operations: operations.rows,
++    usage: tokenUsage,
+   };
+ }
+ 
+@@ -143,6 +194,24 @@ export async function metrics(db: Sql, missionId: string): Promise<string> {
+       value: r.count,
+     })),
+   );
++  const tokenUsage = s.usage as Awaited<ReturnType<typeof usage>>;
++  emit('mesh_usage_runs', 'Runs with or without valid CLI usage receipts', 'gauge', [
++    { labels: { reporting: 'present' }, value: tokenUsage.runsWithUsage },
++    { labels: { reporting: 'missing' }, value: tokenUsage.runsWithoutUsage },
++  ]);
++  emit('mesh_usage_receipts', 'Valid and malformed CLI usage receipts', 'gauge', [
++    { labels: { validity: 'valid' }, value: tokenUsage.validReceipts },
++    { labels: { validity: 'invalid' }, value: tokenUsage.invalidReceipts },
++  ]);
++  emit(
++    'mesh_reported_tokens',
++    'Tokens in valid CLI receipts only; unreported usage is unknown; cached input is included in input',
++    'gauge',
++    Object.entries(tokenUsage.reportedTokens).map(([kind, value]) => ({
++      labels: { kind },
++      value,
++    })),
++  );
+   const counters = await db.query<{ kind: string; count: number }>(
+     "SELECT kind,count(*)::integer AS count FROM trace_events WHERE mission_id=$1 AND kind IN ('claim.conflict','knowledge.invalidated','message.ingress.accepted','message.reply.accepted','message.acknowledged','message.delivery.retry_scheduled','message.delivery.rejected') GROUP BY kind",
+     [missionId],
+diff --git a/src/runner.ts b/src/runner.ts
+index 46c4026..22c83cd 100644
+--- a/src/runner.ts
++++ b/src/runner.ts
+@@ -123,6 +123,8 @@ export interface RunMeshOptions {
+   maxRuns?: number;
+   maxElapsedMs?: number;
+   runTimeoutMs?: number;
++  /** Time for existing peers to emit final handoffs/usage after acceptance, within maxElapsedMs. */
++  completionGraceMs?: number;
+   heartbeatMs?: number;
+   leaseMs?: number;
+   idlePollMs?: number;
+@@ -364,6 +366,7 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
+   const maxRuns = validLimit(options.maxRuns ?? 1024, 'maxRuns');
+   const maxElapsedMs = validLimit(options.maxElapsedMs ?? 8 * 60 * 60 * 1000, 'maxElapsedMs');
+   const runTimeoutMs = validLimit(options.runTimeoutMs ?? 32 * 60 * 1000, 'runTimeoutMs');
++  const completionGraceMs = validLimit(options.completionGraceMs ?? 30_000, 'completionGraceMs');
+   const heartbeatMs = validLimit(options.heartbeatMs ?? 8000, 'heartbeatMs');
+   const leaseMs = validLimit(options.leaseMs ?? Math.max(32000, heartbeatMs * 4), 'leaseMs');
+   if (leaseMs < heartbeatMs * 2)
+@@ -392,6 +395,8 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
+   let fatal: unknown;
+   let runsStarted = 0;
+   let runsFinished = 0;
++  let completionDrain: ReturnType<typeof setTimeout> | undefined;
++  let draining = false;
+   const abort = (state: typeof abortState, reason: string): void => {
+     if (controller.signal.aborted) return;
+     abortState = state;
+@@ -415,17 +420,39 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
+     supervisorId,
+     epoch: lease.epoch,
+   };
++  const deadlineAt = Date.now() + maxElapsedMs;
+   const deadline = setTimeout(
+     () => abort('resource-limit', 'Maximum elapsed time reached'),
+     maxElapsedMs,
+   );
++  async function drainCompleted(): Promise<void> {
++    if (draining || controller.signal.aborted) return;
++    draining = true;
++    const remainingMs = Math.max(0, deadlineAt - Date.now());
++    const graceMs = Math.min(completionGraceMs, remainingMs);
++    // When the wall-clock budget is tighter, its existing timer owns shutdown.
++    // Never reset it or race an equal-deadline grace timer against it.
++    if (completionGraceMs < remainingMs) {
++      completionDrain = setTimeout(
++        () => abort('stopped', 'Completion drain deadline reached'),
++        graceMs,
++      );
++    }
++    await emit({
++      missionId: options.missionId,
++      kind: 'supervisor.draining',
++      data: { graceMs, remainingMs, deadlineAt: new Date(deadlineAt).toISOString() },
++    });
++  }
+   const heartbeat = (async () => {
+     try {
+       while (!controller.signal.aborted) {
+         await delay(heartbeatMs, undefined, { signal: controller.signal });
+         await options.store.renewSupervisor({ ...supervisor, leaseMs });
+         const mission = await options.store.observe(options.missionId);
+-        if (!['active', 'closing'].includes(mission.state)) {
++        if (mission.state === 'completed') {
++          await drainCompleted();
++        } else if (!['active', 'closing'].includes(mission.state)) {
+           abort('stopped', `Mission is ${mission.state}`);
+           return;
+         }
+@@ -754,6 +781,10 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
+       observation = await options.store.observe(options.missionId);
+     }
+     if (controller.signal.aborted) return null;
++    if (observation.state === 'completed') {
++      await drainCompleted();
++      return null;
++    }
+     if (observation.state !== 'active') {
+       abort('stopped', `Mission is ${observation.state}`);
+       return null;
+@@ -799,6 +830,10 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
+       runsFinished += 1;
+       if (controller.signal.aborted) return;
+       if (!end.reaped) throw new Error('Cannot replace an unreaped generation');
++      if ((await options.store.observe(options.missionId)).state === 'completed') {
++        await drainCompleted();
++        return;
++      }
+       if (runsStarted >= maxRuns) continue;
+       if (end.status !== 'exited') {
+         failures += 1;
+@@ -861,6 +896,7 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
+         maxRuns,
+         maxElapsedMs,
+         runTimeoutMs,
++        completionGraceMs,
+         codex: qualification,
+       },
+     });
+@@ -897,12 +933,17 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
+       missionId: options.missionId,
+       kind: 'supervisor.ended',
+       traceId: supervisorId,
+-      data: { ...summary, ...(fatal ? { error: errorText(fatal, globalSecrets) } : {}) },
++      data: {
++        ...summary,
++        ...(controller.signal.aborted ? { shutdownReason: abortReason } : {}),
++        ...(fatal ? { error: errorText(fatal, globalSecrets) } : {}),
++      },
+     });
+     if (fatal) throw fatal;
+     return summary;
+   } finally {
+     clearTimeout(deadline);
++    clearTimeout(completionDrain);
+     options.signal?.removeEventListener('abort', externalAbort);
+     if (!controller.signal.aborted) controller.abort();
+     await heartbeat;
+diff --git a/src/store.ts b/src/store.ts
+index e75cd25..29abd5e 100644
+--- a/src/store.ts
++++ b/src/store.ts
+@@ -207,7 +207,12 @@ export class Store {
+     });
+     return this.mission(id);
+   }
+-  async assertActive(p: Principal, tx: Sql = this.db, allowClosing = false): Promise<void> {
++  async assertActive(
++    p: Principal,
++    tx: Sql = this.db,
++    allowClosing = false,
++    allowCompleted = false,
++  ): Promise<void> {
+     const r = await tx.query(
+       `SELECT r.id FROM runs r JOIN slots s ON s.mission_id=r.mission_id AND s.id=r.agent_id JOIN missions m ON m.id=r.mission_id
+       WHERE r.id=$1 AND r.mission_id=$2 AND r.agent_id=$3 AND r.generation=$4 AND s.generation=r.generation AND s.active_run_id=r.id
+@@ -218,7 +223,7 @@ export class Store {
+         p.missionId,
+         p.agentId,
+         p.generation,
+-        allowClosing ? ['active', 'closing'] : ['active'],
++        ['active', ...(allowClosing ? ['closing'] : []), ...(allowCompleted ? ['completed'] : [])],
+       ],
+     );
+     invariant(
+@@ -227,7 +232,7 @@ export class Store {
+       'Run is finished, expired, fenced, or mission admission is closed',
+     );
+   }
+-  async authenticate(token: string): Promise<Principal> {
++  async authenticate(token: string, allowCompleted = false): Promise<Principal> {
+     invariant(
+       token.length >= 32 && token.length <= 1024,
+       'UNAUTHORIZED',
+@@ -247,7 +252,7 @@ export class Store {
+       runId: row.id,
+       generation: row.generation,
+     };
+-    await this.assertActive(p, this.db, true);
++    await this.assertActive(p, this.db, true, allowCompleted);
+     return p;
+   }
+   async acquireSupervisor(input: {
+@@ -745,7 +750,8 @@ export class Store {
+   async checkpoint(p: Principal, body: unknown, id = randomUUID()): Promise<{ id: string }> {
+     await this.db.transaction(async (tx) => {
+       await this.lock(tx, p.missionId);
+-      await this.assertActive(p, tx);
++      // Final audit metadata may be saved during the bounded completion drain.
++      await this.assertActive(p, tx, false, true);
+       const prior = await tx.query<{ body: unknown; run_id: string }>(
+         'SELECT body,run_id FROM checkpoints WHERE id=$1',
+         [id],
+diff --git a/src/tools.ts b/src/tools.ts
+index ec84a3e..12b79ff 100644
+--- a/src/tools.ts
++++ b/src/tools.ts
+@@ -66,11 +66,13 @@ export class MeshTools {
+       waitMs?: number;
+       knowledgeLimit?: number;
+       knowledgeCursor?: { updatedAt: string; id: string };
++      detail?: 'summary' | 'full';
+     } = {},
+   ) {
+     if (
+       input.sinceRevision &&
+       !input.query &&
++      input.detail !== 'full' &&
+       !input.knowledgeCursor &&
+       input.knowledgeLimit === undefined
+     ) {
+@@ -112,9 +114,24 @@ export class MeshTools {
+     ]);
+     return {
+       ...board,
++      detail: input.detail ?? 'summary',
++      requirements:
++        input.detail === 'full'
++          ? board.requirements
++          : board.requirements.map(({ evidence, mission_id, updated_at, ...requirement }: any) => ({
++              ...requirement,
++              evidenceCount: evidence.length,
++            })),
+       workRevision: board.mission.revision,
+       inbox,
+-      reviews: reviews.rows,
++      reviews:
++        input.detail === 'full'
++          ? reviews.rows
++          : reviews.rows.map(({ reasoning, ...review }) => ({
++              ...review,
++              // Objections remain actionable even in a summary.
++              ...(review.verdict === 'objection' ? { reasoning } : {}),
++            })),
+       operations: operations.rows,
+       consultations: consultations.rows,
+       participation,
+@@ -161,12 +178,41 @@ export class MeshTools {
+         },
+         async (input) => {
+           try {
+-            await this.store.assertActive(p, this.store.db, true);
++            const finishing =
++              name === 'mesh_wait' ||
++              name === 'mesh_board' ||
++              name === 'mesh_yield' ||
++              name === 'mesh_checkpoint' ||
++              (name === 'mesh_operation' && !(input as { cancel?: boolean }).cancel);
++            await this.store.assertActive(p, this.store.db, true, finishing);
+             const result = await this.store.tracer.span(
+               p,
+               `tool.${name}`,
+               { arguments: input },
+-              () => body(input),
++              async () => {
++                // A peer may finish its normal checkpoint/yield sequence just
++                // after acceptance. Report terminal state without mutating it
++                // or entering the now-closed workspace/A2A services.
++                if (name === 'mesh_board' || name === 'mesh_yield') {
++                  const state = await this.store.observe(p.missionId);
++                  if (state.state === 'completed') {
++                    const participation = await this.participation(p);
++                    return name === 'mesh_yield'
++                      ? participation
++                      : {
++                          terminal: true,
++                          mission: {
++                            id: p.missionId,
++                            state: state.state,
++                            revision: state.workRevision,
++                          },
++                          workRevision: state.workRevision,
++                          participation,
++                        };
++                  }
++                }
++                return body(input);
++              },
+             );
+             return { content: [{ type: 'text', text: JSON.stringify(result ?? { ok: true }) }] };
+           } catch (error) {
+@@ -235,8 +281,9 @@ export class MeshTools {
+     );
+     tool(
+       'mesh_board',
+-      'Read shared work, inbox, open consultations, reviews, and reusable operation evidence. knowledgePage includes counts and nextCursor; pass it as knowledgeCursor with the same query to read older knowledge. sinceRevision suppresses unchanged snapshots except explicit knowledge page requests; waitMs waits for change. Search filters knowledge only. Lists are bounded; final acceptance checks all records.',
++      'Read shared work, inbox, open consultations, reviews, and reusable operation evidence. Default summary omits requirement evidence and passing review reasoning; use detail=full before reviewing evidence or investigating reviews. Full detail bypasses sinceRevision. knowledgePage includes counts and nextCursor; pass it as knowledgeCursor with the same query to read older knowledge. sinceRevision suppresses unchanged snapshots except explicit knowledge page requests; waitMs waits for change. Search filters knowledge only. Lists are bounded; final acceptance checks all records.',
+       {
++        detail: z.enum(['summary', 'full']).optional(),
+         query: z.string().max(400).optional(),
+         sinceRevision: z.string().regex(/^\d+$/).optional(),
+         waitMs: z.number().int().min(0).max(30_000).optional(),
+diff --git a/test/daemon.test.ts b/test/daemon.test.ts
+index 49c5a44..de399a2 100644
+--- a/test/daemon.test.ts
++++ b/test/daemon.test.ts
+@@ -10,7 +10,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+ import { startDaemon } from '../src/daemon.js';
+ import { TestDatabase } from './helpers.js';
+-import { exportMission, messages, metrics } from '../src/observer.js';
++import { exportMission, messages, metrics, status } from '../src/observer.js';
+ import { readEvents } from '../src/trace.js';
+ const exec = promisify(execFile);
+ 
+@@ -23,6 +23,37 @@ async function waitForWaitStarted(f: Awaited<ReturnType<typeof fixture>>, count
+   assert.fail('Peer did not enter its wait');
+ }
+ 
++test('usage reports partial receipts, sums turns, and does not count cached input twice', async (t) => {
++  const f = await fixture();
++  t.after(f.close);
++  const initial = (await status(f.db, f.daemon.missionId)).usage as any;
++  assert.equal(initial.runsWithoutUsage, 2);
++  assert.equal(initial.validReceipts, 0);
++  for (const receipt of [
++    { input_tokens: 100, cached_input_tokens: 80, output_tokens: 10 },
++    { input_tokens: 50, cached_input_tokens: 0, output_tokens: 5 },
++    { input_tokens: 1, cached_input_tokens: 2, output_tokens: 0 },
++    { input_tokens: '100', cached_input_tokens: 0, output_tokens: 0 },
++    null,
++  ]) {
++    await f.daemon.store.events({
++      ...f.a.principal,
++      kind: 'codex.turn.completed',
++      data: { event: { type: 'turn.completed', usage: receipt } },
++    });
++  }
++  const partial = (await status(f.db, f.daemon.missionId)).usage as any;
++  assert.deepEqual(partial.reportedTokens, { input: 150, cachedInput: 80, output: 15, total: 165 });
++  assert.equal(partial.runsWithUsage, 1);
++  assert.equal(partial.runsWithoutUsage, 1);
++  assert.equal(partial.validReceipts, 2);
++  assert.equal(partial.invalidReceipts, 3);
++  assert.match(partial.note, /unknown/);
++  const text = await metrics(f.db, f.daemon.missionId);
++  assert.match(text, /mesh_usage_runs\{[^}]+reporting="missing"\} 1/);
++  assert.match(text, /mesh_reported_tokens\{[^}]+kind="total"\} 165/);
++});
++
+ test('participation waits keep sessions live, fence expired runs, and allow terminal exit only', async (t) => {
+   const f = await fixture();
+   t.after(f.close);
+@@ -382,6 +413,17 @@ test('independent MCP peers consult over A2A, publish in one checkout, and compl
+   });
+   const reviewed = await f.call(f.ca, 'mesh_board');
+   assert.equal(reviewed.reviews.length, 2);
++  assert.equal(reviewed.detail, 'summary');
++  assert.equal(reviewed.requirements[0].evidenceCount, 1);
++  assert.equal(reviewed.requirements[0].evidence, undefined);
++  assert.equal(reviewed.reviews[0].reasoning, undefined);
++  const detailed = await f.call(f.ca, 'mesh_board', {
++    detail: 'full',
++    sinceRevision: reviewed.workRevision,
++  });
++  assert.equal(detailed.detail, 'full');
++  assert.equal(detailed.requirements[0].evidence.length, 1);
++  assert.ok(detailed.reviews.every((review: any) => review.reasoning.length > 0));
+   assert.equal(
+     reviewed.operations.find((op: any) => op.operation_id === 'write-counter').state,
+     'applied',
+@@ -392,7 +434,8 @@ test('independent MCP peers consult over A2A, publish in one checkout, and compl
+     reason: 'Implementation ready for final verification',
+   });
+   assert.equal(released.mayExit, false);
+-  const acceptanceWait = f.call(f.cb, 'mesh_wait', { waitMs: 2000 });
++  // Final verification spawns a sandboxed process; allow for host startup load.
++  const acceptanceWait = f.call(f.cb, 'mesh_wait', { waitMs: 10_000 });
+   await waitForWaitStarted(f, 2);
+   const proposal = await f.call(f.ca, 'mesh_propose_completion', {
+     operationId: 'finish-1',
+@@ -412,7 +455,43 @@ test('independent MCP peers consult over A2A, publish in one checkout, and compl
+     'completed',
+     JSON.stringify(await f.daemon.completion.status(mission.id, 'finish-1')),
+   );
+-  assert.equal((await acceptanceWait).mayExit, true);
++  const acceptedParticipation = await acceptanceWait;
++  assert.equal(acceptedParticipation.mayExit, true, JSON.stringify(acceptedParticipation));
++  // Accepted missions retain only terminal status/checkpoint access for a live,
++  // leased generation; normal work and A2A authentication stay closed.
++  assert.equal((await f.call(f.cb, 'mesh_wait')).mayExit, true);
++  const finalBoard = await f.call(f.cb, 'mesh_board');
++  assert.equal(finalBoard.terminal, true);
++  assert.equal(finalBoard.participation.mayExit, true);
++  const finalYield = await f.call(f.cb, 'mesh_yield', { reason: 'Final checkpoint complete' });
++  assert.equal(finalYield.mayExit, true);
++  assert.equal(finalYield.workRevision, finalBoard.workRevision);
++  assert.equal((await f.daemon.store.mission(mission.id)).revision, mission.revision);
++  assert.equal(
++    (await f.call(f.ca, 'mesh_operation', { operationId: 'finish-1' })).state,
++    'completed',
++  );
++  await f.call(f.ca, 'mesh_checkpoint', { body: { summary: 'Acceptance complete' } });
++  assert.deepEqual((await f.daemon.store.mission(mission.id)).acceptance, mission.acceptance);
++  await assert.rejects(
++    f.call(f.ca, 'mesh_claim', {
++      id: 'after-acceptance',
++      resources: ['counter.txt'],
++      description: 'Forbidden new work',
++    }),
++    /STALE_RUN/,
++  );
++  await assert.rejects(
++    f.call(f.ca, 'mesh_operation', { operationId: 'finish-1', cancel: true }),
++    /STALE_RUN/,
++  );
++  await assert.rejects(f.daemon.store.authenticate(f.a.token), /Run is finished/);
++  await f.db.query("UPDATE runs SET lease_expires=now()-interval '1 second' WHERE id=$1", [
++    f.b.principal.runId,
++  ]);
++  await assert.rejects(f.call(f.cb, 'mesh_wait'));
++  await assert.rejects(f.call(f.cb, 'mesh_board'));
++  await assert.rejects(f.call(f.cb, 'mesh_yield', { reason: 'Expired run' }));
+   const events = await readEvents(f.db, mission.id, { limit: 2000 });
+   assert.ok(events.some((e) => e.kind === 'mission.completed'));
+   assert.ok(events.some((e) => e.kind === 'completion.proposal.completed'));
+diff --git a/test/runner.test.ts b/test/runner.test.ts
+index 05c13c7..361c642 100644
+--- a/test/runner.test.ts
++++ b/test/runner.test.ts
+@@ -120,7 +120,7 @@ if (mode === 'large') process.stdout.write('X'.repeat(128 * 1024) + '\\n');
+ if (mode === 'hang') setInterval(() => {}, 1000);
+ let prompt = '';
+ for await (const chunk of process.stdin) prompt += chunk.toString();
+-if (!prompt.includes('Consult with the other mesh peers')) process.exit(44);
++if (!prompt.includes('mesh_join')) process.exit(44);
+ if (mode === 'hang') { console.log(JSON.stringify({ type: 'thread.started', thread_id: 'hung-thread' })); }
+ else {
+   process.stdout.write(JSON.stringify({ type: 'thread.started', thread_id: 'thread-' + process.env.MESH_RUN_ID }) + '\\n');
+@@ -425,11 +425,102 @@ test('closing preserves already-running peers and waits for mission acceptance w
+   }
+ });
+ 
++test('acceptance drains existing peers, retains handoffs and usage, and never replaces them', async () => {
++  const f = await fixture();
++  try {
++    f.options.concurrency = 2;
++    f.options.maxRuns = 8;
++    f.options.completionGraceMs = 1000;
++    f.options.environment!.MESH_TEST_DELAY = '200';
++    const record = f.options.events;
++    let starts = 0;
++    let leasesAtDrain = 0;
++    f.options.events = async (event) => {
++      const result = await record(event);
++      if (event.kind === 'codex.thread.started' && ++starts === 2) {
++        f.store.state = 'completed';
++        f.store.revision = '2';
++      }
++      if (event.kind === 'supervisor.draining') leasesAtDrain = f.store.leases;
++      return result;
++    };
++    const summary = await runMesh(f.options);
++    assert.equal(summary.state, 'completed');
++    assert.equal(summary.runsStarted, 2);
++    assert.equal(summary.runsFinished, 2);
++    assert.equal(f.events.filter((e) => e.kind === 'supervisor.draining').length, 1);
++    assert.equal(f.events.filter((e) => e.kind === 'codex.turn.completed').length, 2);
++    assert.ok(f.store.leases > leasesAtDrain, 'leases must renew during drain');
++    assert.ok(!f.events.some((e) => e.kind === 'run.stop.requested'));
++    for (const { principal, end } of f.store.ends) {
++      assert.equal(end.status, 'exited');
++      assert.equal(end.result?.outcome, 'continue');
++      const file = join(
++        f.options.logRoot,
++        principal.missionId,
++        principal.agentId,
++        principal.runId,
++        'result.json',
++      );
++      assert.equal(JSON.parse(await readFile(file, 'utf8')).outcome, 'continue');
++    }
++  } finally {
++    await f.cleanup();
++  }
++});
++
++for (const stop of ['grace', 'elapsed', 'external'] as const) {
++  test(`completed mission stops an unresponsive peer at the ${stop} boundary`, async () => {
++    const f = await fixture('hang');
++    const controller = new AbortController();
++    try {
++      f.options.signal = controller.signal;
++      f.options.maxRuns = 8;
++      f.options.maxElapsedMs = stop === 'elapsed' ? 600 : 5000;
++      f.options.runTimeoutMs = 5000;
++      f.options.completionGraceMs = stop === 'grace' ? 80 : 5000;
++      const record = f.options.events;
++      f.options.events = async (event) => {
++        const result = await record(event);
++        // Short stdout records can remain in the streaming redactor until EOF.
++        // Synchronize acceptance with process startup, independently of output.
++        if (event.kind === 'run.started') f.store.state = 'completed';
++        if (event.kind === 'supervisor.draining' && stop === 'external') controller.abort();
++        return result;
++      };
++      const began = Date.now();
++      const summary = await runMesh(f.options);
++      assert.equal(summary.state, 'completed', 'shutdown must not erase acceptance');
++      assert.equal(summary.runsStarted, 1);
++      assert.equal(f.store.ends[0].end.status, 'aborted');
++      assert.equal(f.store.ends[0].end.reaped, true);
++      assert.ok(Date.now() - began < 2500, 'must not wait for the five-second grace');
++      const ended = f.events.find((e) => e.kind === 'supervisor.ended')!;
++      assert.equal(
++        (ended.data as { shutdownReason: string }).shutdownReason,
++        stop === 'grace'
++          ? 'Completion drain deadline reached'
++          : stop === 'elapsed'
++            ? 'Maximum elapsed time reached'
++            : 'User stopped the runner',
++      );
++      const drain = f.events.find((e) => e.kind === 'supervisor.draining')!.data as {
++        graceMs: number;
++        remainingMs: number;
++      };
++      assert.ok(drain.graceMs <= drain.remainingMs);
++    } finally {
++      controller.abort();
++      await f.cleanup();
++    }
++  });
++}
++
+ test('blocked populations honor the hard elapsed limit without repeated runs', async () => {
+   const f = await fixture('blocked');
+   try {
+     f.options.maxRuns = 8;
+-    f.options.maxElapsedMs = 300;
++    f.options.maxElapsedMs = 1000;
+     const summary = await runMesh(f.options);
+     assert.equal(summary.state, 'resource-limit');
+     assert.equal(summary.runsStarted, 1);

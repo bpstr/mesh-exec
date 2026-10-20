@@ -159,6 +159,8 @@ export interface RunMeshOptions {
   maxRuns?: number;
   maxElapsedMs?: number;
   runTimeoutMs?: number;
+  /** Time for existing peers to emit final handoffs/usage after acceptance, within maxElapsedMs. */
+  completionGraceMs?: number;
   heartbeatMs?: number;
   leaseMs?: number;
   idlePollMs?: number;
@@ -617,6 +619,7 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
   const maxRuns = validLimit(options.maxRuns ?? 1024, 'maxRuns');
   const maxElapsedMs = validLimit(options.maxElapsedMs ?? 8 * 60 * 60 * 1000, 'maxElapsedMs');
   const runTimeoutMs = validLimit(options.runTimeoutMs ?? 32 * 60 * 1000, 'runTimeoutMs');
+  const completionGraceMs = validLimit(options.completionGraceMs ?? 30_000, 'completionGraceMs');
   const heartbeatMs = validLimit(options.heartbeatMs ?? 8000, 'heartbeatMs');
   const leaseMs = validLimit(options.leaseMs ?? Math.max(32000, heartbeatMs * 4), 'leaseMs');
   if (leaseMs < heartbeatMs * 2)
@@ -645,6 +648,8 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
   let fatal: unknown;
   let runsStarted = 0;
   let runsFinished = 0;
+  let completionDrain: ReturnType<typeof setTimeout> | undefined;
+  let draining = false;
   const abort = (state: typeof abortState, reason: string): void => {
     if (controller.signal.aborted) return;
     abortState = state;
@@ -668,17 +673,39 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
     supervisorId,
     epoch: lease.epoch,
   };
+  const deadlineAt = Date.now() + maxElapsedMs;
   const deadline = setTimeout(
     () => abort('resource-limit', 'Maximum elapsed time reached'),
     maxElapsedMs,
   );
+  async function drainCompleted(): Promise<void> {
+    if (draining || controller.signal.aborted) return;
+    draining = true;
+    const remainingMs = Math.max(0, deadlineAt - Date.now());
+    const graceMs = Math.min(completionGraceMs, remainingMs);
+    // When the wall-clock budget is tighter, its existing timer owns shutdown.
+    // Never reset it or race an equal-deadline grace timer against it.
+    if (completionGraceMs < remainingMs) {
+      completionDrain = setTimeout(
+        () => abort('stopped', 'Completion drain deadline reached'),
+        graceMs,
+      );
+    }
+    await emit({
+      missionId: options.missionId,
+      kind: 'supervisor.draining',
+      data: { graceMs, remainingMs, deadlineAt: new Date(deadlineAt).toISOString() },
+    });
+  }
   const heartbeat = (async () => {
     try {
       while (!controller.signal.aborted) {
         await delay(heartbeatMs, undefined, { signal: controller.signal });
         await options.store.renewSupervisor({ ...supervisor, leaseMs });
         const mission = await options.store.observe(options.missionId);
-        if (!['active', 'closing'].includes(mission.state)) {
+        if (mission.state === 'completed') {
+          await drainCompleted();
+        } else if (!['active', 'closing'].includes(mission.state)) {
           abort('stopped', `Mission is ${mission.state}`);
           return;
         }
@@ -1144,6 +1171,10 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
       observation = await options.store.observe(options.missionId);
     }
     if (controller.signal.aborted) return null;
+    if (observation.state === 'completed') {
+      await drainCompleted();
+      return null;
+    }
     if (observation.state !== 'active') {
       abort('stopped', `Mission is ${observation.state}`);
       return null;
@@ -1189,6 +1220,10 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
       runsFinished += 1;
       if (controller.signal.aborted) return;
       if (!end.reaped) throw new Error('Cannot replace an unreaped generation');
+      if ((await options.store.observe(options.missionId)).state === 'completed') {
+        await drainCompleted();
+        return;
+      }
       if (runsStarted >= maxRuns) continue;
       if (end.status !== 'exited') {
         failures += 1;
@@ -1203,7 +1238,7 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
         continue;
       }
       failures = 0;
-      if (end.result && ['idle', 'blocked', 'completion_proposed'].includes(end.result.outcome)) {
+      if (end.result && ['blocked', 'completion_proposed'].includes(end.result.outcome)) {
         // The cursor came from mesh_yield; do not replace it with a later snapshot.
         const revision = end.result.work_revision ?? observed.workRevision;
         await emit({
@@ -1251,6 +1286,7 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
         maxRuns,
         maxElapsedMs,
         runTimeoutMs,
+        completionGraceMs,
         codex: qualification,
       },
     });
@@ -1287,12 +1323,17 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
       missionId: options.missionId,
       kind: 'supervisor.ended',
       traceId: supervisorId,
-      data: { ...summary, ...(fatal ? { error: errorText(fatal, globalSecrets) } : {}) },
+      data: {
+        ...summary,
+        ...(controller.signal.aborted ? { shutdownReason: abortReason } : {}),
+        ...(fatal ? { error: errorText(fatal, globalSecrets) } : {}),
+      },
     });
     if (fatal) throw fatal;
     return summary;
   } finally {
     clearTimeout(deadline);
+    clearTimeout(completionDrain);
     options.signal?.removeEventListener('abort', externalAbort);
     if (!controller.signal.aborted) controller.abort();
     await heartbeat;

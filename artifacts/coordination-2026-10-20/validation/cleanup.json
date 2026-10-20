@@ -1,0 +1,16 @@
+{
+  "removed": [
+    {
+      "path": "/private/tmp/mesh-exec-coordination-20261020/candidate/dist",
+      "allocatedBytes": 684032
+    }
+  ],
+  "freeBytes": 16165904384,
+  "listeners": {
+    "51355": "",
+    "5432": "COMMAND   PID  USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME\npostgres 1018 bpstr    7u  IPv6 0x285b989a1b54bad0      0t0  TCP [::1]:5432 (LISTEN)\npostgres 1018 bpstr    8u  IPv4 0x235bc3c1b13750f8      0t0  TCP 127.0.0.1:5432 (LISTEN)",
+    "55433": "COMMAND  PID  USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME\npostgres 999 bpstr    5u  IPv4 0x7b920a66369f6b08      0t0  TCP 127.0.0.1:55433 (LISTEN)"
+  },
+  "workers": "All five run.process.ended events report reaped=true; pilot process exited.",
+  "preserved": "Source snapshots, runtime evidence, database, active shared Codanna index, root app build, dependencies, and other chats services preserved."
+}

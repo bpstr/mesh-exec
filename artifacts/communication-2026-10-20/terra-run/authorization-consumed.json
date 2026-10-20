@@ -1,0 +1,14 @@
+{
+  "model": "gpt-5.6-terra",
+  "agents": 3,
+  "maxLaunches": 3,
+  "maxToolCalls": 40,
+  "maxElapsedMs": 120000,
+  "replacements": false,
+  "retries": false,
+  "stop": "completed discussion handoffs, first provider error, 40 admitted mesh tool calls, or two-minute cutoff",
+  "authorization": "User explicitly approved three Terra launches, two minutes, 40 mesh calls, no retries/replacements; stop at completion, provider error, or any limit.",
+  "startedAt": "2026-10-20T17:26:22.745Z",
+  "runnerCommit": "9ed4a6524309cecf72756a8af5ae372296ce7e9a",
+  "codexVersion": "codex-cli 0.160.0"
+}

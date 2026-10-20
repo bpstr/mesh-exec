@@ -1,0 +1,19 @@
+{
+  "command": [
+    "/Users/bpstr/.local/bin/codex",
+    "debug",
+    "prompt-input",
+    "-c",
+    "model=\"gpt-6.1-sol\"",
+    "-c",
+    "model_reasoning_effort=\"low\"",
+    "-c",
+    "model_provider=\"mesh-pilot\"",
+    "-c",
+    "model_providers.mesh-pilot={name=\"Mesh pilot\",requires_openai_auth=true,request_max_retries=0,stream_max_retries=0}"
+  ],
+  "exitCode": 0,
+  "outputBytes": 39309,
+  "outputSha256": "83dd44e40aaa1c74731d1904e2a100f132809e31578e2bceb15db134bb24aa78",
+  "scope": "Configuration rendering only, no inference or model availability claim."
+}

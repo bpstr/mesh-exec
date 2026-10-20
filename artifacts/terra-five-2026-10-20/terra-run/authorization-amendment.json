@@ -1,0 +1,10 @@
+{
+  "at": "2026-10-20T17:51:01.922Z",
+  "authorization": "User: I think we should not limit tool calls",
+  "pid": 30815,
+  "modifiedGrantCount": 1,
+  "maxToolCalls": null,
+  "maxLaunches": 5,
+  "maxElapsedMs": 300000,
+  "method": "Targeted in-memory grant amendment; no process restart or extra launch"
+}

@@ -1,0 +1,518 @@
+diff --git a/src/a2a.ts b/src/a2a.ts
+index 1ce775b..456d257 100644
+--- a/src/a2a.ts
++++ b/src/a2a.ts
+@@ -102,11 +102,19 @@ export interface SendInput {
+ export interface ReplyInput {
+   taskId: string;
+   messageId?: string;
++  /** Acknowledge this incoming request atomically with its reply. */
++  deliveryId?: string;
+   text?: string;
+   data?: unknown;
+   state?: 'completed' | 'working' | 'input-required' | 'rejected' | 'failed';
+ }
+ 
++interface AckInput {
++  deliveryId: string;
++  disposition?: 'handled' | 'deferred' | 'rejected' | 'superseded';
++  reason?: string;
++}
++
+ export interface CancelInput {
+   recipientId: string;
+   taskId: string;
+@@ -420,6 +428,23 @@ export class A2aService {
+       await this.options.validatePrincipal(tx, principal);
+       const row = await this.taskRow(tx, principal, principal.agentId, taskId, true);
+       if (row.recipient_id !== principal.agentId) throw new TaskNotFoundError();
++      if (input.deliveryId) {
++        const delivery = await tx.query(
++          'SELECT delivery_id FROM mailbox_deliveries WHERE delivery_id=$1 AND mission_id=$2 AND recipient_id=$3 AND task_id=$4 AND sender_id=$5',
++          [
++            id(input.deliveryId, 'deliveryId'),
++            principal.missionId,
++            principal.agentId,
++            taskId,
++            row.sender_id,
++          ],
++        );
++        if (!delivery.rowCount)
++          throw new MeshError(
++            'INVALID_REPLY_DELIVERY',
++            'Delivery must be an incoming request for this task.',
++          );
++      }
+       const message = Message.fromJSON({
+         messageId,
+         taskId,
+@@ -430,7 +455,11 @@ export class A2aService {
+       });
+       validateMessage(message, Role.ROLE_AGENT);
+       const wireMessage = Message.toJSON(message);
+-      const payloadHash = hash({ message: wireMessage, state });
++      const payloadHash = hash({
++        message: wireMessage,
++        state,
++        ...(input.deliveryId ? { deliveryId: input.deliveryId } : {}),
++      });
+       const prior = (
+         await tx.query<{ payload_hash: string; accepted_result: unknown }>(
+           'SELECT payload_hash,accepted_result FROM a2a_messages WHERE mission_id=$1 AND sender_id=$2 AND recipient_id=$3 AND message_id=$4',
+@@ -439,6 +468,8 @@ export class A2aService {
+       ).rows[0];
+       if (prior) {
+         requireSamePayload(prior.payload_hash, payloadHash);
++        if (input.deliveryId)
++          await this.acknowledge(tx, principal, { deliveryId: input.deliveryId });
+         await this.trace(tx, principal, 'message.reply.replayed', row.trace_id, messageId, taskId, {
+           result: prior.accepted_result,
+         });
+@@ -448,10 +479,12 @@ export class A2aService {
+           contextId: row.context_id,
+           task: prior.accepted_result,
+           replayed: true,
++          ...(input.deliveryId ? { acknowledgedDeliveryId: input.deliveryId } : {}),
+         };
+       }
+       if (terminal.has(row.state))
+         throw new UnsupportedOperationError('A terminal task cannot receive another reply.');
++      if (input.deliveryId) await this.acknowledge(tx, principal, { deliveryId: input.deliveryId });
+       const task = Task.fromJSON(row.task);
+       task.history.push(message);
+       task.status = { state, message, timestamp: new Date().toISOString() };
+@@ -502,6 +535,7 @@ export class A2aService {
+         deliveryId,
+         task: wireTask,
+         replayed: false,
++        ...(input.deliveryId ? { acknowledgedDeliveryId: input.deliveryId } : {}),
+       };
+     });
+   }
+@@ -520,8 +554,21 @@ export class A2aService {
+     return { taskId: task.id, contextId: task.contextId, task: Task.toJSON(task) };
+   }
+ 
+-  async poll(principal: Principal, input: { limit?: number } = {}) {
++  async poll(principal: Principal, input: { limit?: number; waitMs?: number } = {}) {
+     const limit = boundedLimit(input.limit, 32, 128);
++    const waitMs = input.waitMs ?? 0;
++    if (!Number.isInteger(waitMs) || waitMs < 0 || waitMs > 30_000)
++      throw new RequestMalformedError('waitMs must be an integer from 0 to 30000.');
++    const deadline = Date.now() + waitMs;
++    while (Date.now() < deadline) {
++      await this.options.validatePrincipal(this.options.db, principal);
++      const pending = await this.options.db.query(
++        'SELECT delivery_id FROM mailbox_deliveries WHERE mission_id=$1 AND recipient_id=$2 AND handled_at IS NULL LIMIT 1',
++        [principal.missionId, principal.agentId],
++      );
++      if (pending.rowCount) break;
++      await delay(Math.max(0, Math.min(250, deadline - Date.now())));
++    }
+     return this.options.db.transaction(async (tx) => {
+       await lockMission(tx, principal.missionId);
+       await this.options.validatePrincipal(tx, principal);
+@@ -592,54 +639,51 @@ export class A2aService {
+     });
+   }
+ 
+-  async ack(
+-    principal: Principal,
+-    input: {
+-      deliveryId: string;
+-      disposition?: 'handled' | 'deferred' | 'rejected' | 'superseded';
+-      reason?: string;
+-    },
+-  ) {
+-    const disposition = input.disposition ?? 'handled';
+-    if (!['handled', 'deferred', 'rejected', 'superseded'].includes(disposition))
+-      throw new MeshError('INVALID_DISPOSITION', 'Invalid message disposition.');
++  async ack(principal: Principal, input: AckInput) {
+     return this.options.db.transaction(async (tx) => {
+       await lockMission(tx, principal.missionId);
+       await this.options.validatePrincipal(tx, principal);
+-      const row = (
+-        await tx.query<DeliveryRow>(
+-          'SELECT * FROM mailbox_deliveries WHERE delivery_id=$1 AND mission_id=$2 AND recipient_id=$3 FOR UPDATE',
+-          [id(input.deliveryId, 'deliveryId'), principal.missionId, principal.agentId],
+-        )
+-      ).rows[0];
+-      if (!row) throw new MeshError('NOT_FOUND', 'Mailbox delivery not found.');
+-      if (row.handled_at) {
+-        if (row.disposition !== disposition)
+-          throw new MeshError(
+-            'DISPOSITION_CONFLICT',
+-            'The delivery already has a final disposition.',
+-          );
+-        return { deliveryId: row.delivery_id, disposition, replayed: true };
+-      }
+-      await tx.query(
+-        `UPDATE mailbox_deliveries SET disposition=$1,disposition_reason=$2,handled_run_id=$3,
+-         handled_at=CASE WHEN $1='deferred' THEN NULL ELSE now() END WHERE delivery_id=$4`,
+-        [disposition, input.reason ?? null, principal.runId, row.delivery_id],
+-      );
+-      if (disposition !== 'deferred') await changed(tx, principal.missionId);
+-      await this.trace(
+-        tx,
+-        principal,
+-        'message.acknowledged',
+-        row.trace_id,
+-        row.message_id,
+-        row.task_id,
+-        { deliveryId: row.delivery_id, disposition, reason: input.reason ?? null },
+-      );
+-      return { deliveryId: row.delivery_id, disposition, replayed: false };
++      return this.acknowledge(tx, principal, input);
+     });
+   }
+ 
++  private async acknowledge(tx: Sql, principal: Principal, input: AckInput) {
++    const disposition = input.disposition ?? 'handled';
++    if (!['handled', 'deferred', 'rejected', 'superseded'].includes(disposition))
++      throw new MeshError('INVALID_DISPOSITION', 'Invalid message disposition.');
++    const row = (
++      await tx.query<DeliveryRow>(
++        'SELECT * FROM mailbox_deliveries WHERE delivery_id=$1 AND mission_id=$2 AND recipient_id=$3 FOR UPDATE',
++        [id(input.deliveryId, 'deliveryId'), principal.missionId, principal.agentId],
++      )
++    ).rows[0];
++    if (!row) throw new MeshError('NOT_FOUND', 'Mailbox delivery not found.');
++    if (row.handled_at) {
++      if (row.disposition !== disposition)
++        throw new MeshError(
++          'DISPOSITION_CONFLICT',
++          'The delivery already has a final disposition.',
++        );
++      return { deliveryId: row.delivery_id, disposition, replayed: true };
++    }
++    await tx.query(
++      `UPDATE mailbox_deliveries SET disposition=$1,disposition_reason=$2,handled_run_id=$3,
++     handled_at=CASE WHEN $1='deferred' THEN NULL ELSE now() END WHERE delivery_id=$4`,
++      [disposition, input.reason ?? null, principal.runId, row.delivery_id],
++    );
++    if (disposition !== 'deferred') await changed(tx, principal.missionId);
++    await this.trace(
++      tx,
++      principal,
++      'message.acknowledged',
++      row.trace_id,
++      row.message_id,
++      row.task_id,
++      { deliveryId: row.delivery_id, disposition, reason: input.reason ?? null },
++    );
++    return { deliveryId: row.delivery_id, disposition, replayed: false };
++  }
++
+   /** Called periodically and on daemon startup; expired attempts are safely replayed. */
+   async reconcileOutbox(limit = 32): Promise<void> {
+     const rows = (
+diff --git a/src/codex.ts b/src/codex.ts
+index 125a9cf..2f199a5 100644
+--- a/src/codex.ts
++++ b/src/codex.ts
+@@ -3,7 +3,6 @@ import { mkdir, writeFile } from 'node:fs/promises';
+ import { isAbsolute, join, resolve } from 'node:path';
+ import { StringDecoder } from 'node:string_decoder';
+ import { promisify } from 'node:util';
+-import { coordinationInstructions } from './coordination.js';
+ 
+ /** The final message is a handoff, never proof that the mission is complete. */
+ export const CODEX_RESULT_SCHEMA = {
+@@ -86,10 +85,11 @@ export function buildCodexInvocation(options: CodexInvocationOptions): CodexInvo
+     ? options.roadmapPath
+     : resolve(cwd, options.roadmapPath);
+   const prompt = [
+-    'Implement the mission roadmap in this repository. Consult with the other mesh peers.',
++    'Fulfil the mission roadmap with the other mesh peers.',
+     `Mission: ${options.missionId}. Roadmap: ${JSON.stringify(roadmapPath)}.`,
+     `Your slot is ${options.slotId}; this is run ${options.runId}, generation ${options.generation}.`,
+-    coordinationInstructions,
++    'Call mesh_join first for the roadmap, peer state, and general workflow. Follow that workflow and use only its advertised mesh tools. Do not start other agents.',
++    'For an idle or blocked handoff, handle your inbox with mesh_poll, record a checkpoint, and call mesh_yield. Copy its workRevision to final work_revision. Your handoff is not mission acceptance.',
+   ].join('\n');
+ 
+   const args = [
+diff --git a/src/coordination.ts b/src/coordination.ts
+index d890e92..c0bc689 100644
+--- a/src/coordination.ts
++++ b/src/coordination.ts
+@@ -12,3 +12,12 @@ export const coordinationInstructions = [
+   'Before exit, check the inbox, handle outstanding requests, and record one concise checkpoint with evidence and unresolved dependencies. For idle/blocked outcomes call mesh_yield and copy workRevision into final work_revision. If waiting for a live peer, prefer a bounded board wait before yielding the process.',
+   'Do not start other agent CLIs or subagents. The runner owns the population. Your structured final message is a handoff, not mission acceptance.',
+ ].join('\n');
++
++export const discussionInstructions = [
++  'This is a bounded discussion, not an implementation mission. Use only the advertised mesh communication tools; leave files unchanged and do not run commands or other agents.',
++  'Use the roadmap as the discussion topic. Send one substantive question or proposal to discussionPartner; keep each message under 80 words. Each peer has one partner so every participant both asks and answers without broadcast chatter.',
++  'Handle messages already included in join. Use mesh_poll with waitMs=20000 when waiting for mail. Reply to each incoming request with state=completed and its deliveryId to acknowledge it atomically. Include a reasoned answer, not just agreement.',
++  'A terminal answer to your own request needs mesh_ack, not another reply. Batch deliveryIds when appropriate. Reuse a messageId only when replaying the exact same message.',
++  'Finish after your outgoing request has a terminal answer that you acknowledged and you answered your incoming request. Record one mesh_checkpoint with your conclusion and the task/message IDs supporting it; omit the checkpoint id for a new record.',
++  'Call mesh_yield, copy its workRevision to final work_revision, and exit idle with a concise handoff. This closes your discussion contribution; it does not assert implementation-mission acceptance.',
++].join('\n');
+diff --git a/src/daemon.ts b/src/daemon.ts
+index 6091973..d210c52 100644
+--- a/src/daemon.ts
++++ b/src/daemon.ts
+@@ -175,7 +175,13 @@ export async function startDaemon(options: DaemonOptions): Promise<RunningDaemon
+       baseUrl: url,
+     });
+     completion = new Completion(store, workspace);
+-    const meshTools = new MeshTools(store, a2a, workspace, completion);
++    const workflow = (await store.mission(missionId)).config.workflow ?? 'implementation';
++    invariant(
++      workflow === 'implementation' || workflow === 'discussion',
++      'INVALID_WORKFLOW',
++      'Workflow must be implementation or discussion',
++    );
++    const meshTools = new MeshTools(store, a2a, workspace, completion, workflow);
+     const a2aRouter = a2a.router();
+     app.use((req, res, next) => {
+       if (req.path.startsWith('/agents/')) a2aRouter(req, res, next);
+diff --git a/src/tools.ts b/src/tools.ts
+index 84e2885..22364cc 100644
+--- a/src/tools.ts
++++ b/src/tools.ts
+@@ -6,6 +6,7 @@ import { Store, normalizeResource } from './store.js';
+ import { A2aService } from './a2a.js';
+ import { Workspace } from './workspace.js';
+ import { Completion } from './completion.js';
++import { coordinationInstructions, discussionInstructions } from './coordination.js';
+ import { invariant, type Principal } from './types.js';
+ 
+ const id = z.string().min(1).max(256);
+@@ -33,6 +34,7 @@ export class MeshTools {
+     readonly a2a: A2aService,
+     readonly workspace: Workspace,
+     readonly completion: Completion,
++    readonly workflow: 'implementation' | 'discussion' = 'implementation',
+   ) {}
+   private async snapshot(
+     p: Principal,
+@@ -97,6 +99,19 @@ export class MeshTools {
+       readOnly: boolean,
+       body: (a: any) => Promise<unknown>,
+     ) => {
++      if (
++        this.workflow === 'discussion' &&
++        ![
++          'mesh_join',
++          'mesh_send',
++          'mesh_reply',
++          'mesh_poll',
++          'mesh_ack',
++          'mesh_checkpoint',
++          'mesh_yield',
++        ].includes(name)
++      )
++        return;
+       server.registerTool(
+         name,
+         {
+@@ -148,12 +163,38 @@ export class MeshTools {
+           'SELECT id,run_id,body,created_at FROM checkpoints WHERE mission_id=$1 AND agent_id=$2 ORDER BY created_at DESC LIMIT 3',
+           [p.missionId, p.agentId],
+         );
++        if (this.workflow === 'discussion') {
++          const peers = (
++            await this.store.db.query(
++              'SELECT id,state FROM slots WHERE mission_id=$1 ORDER BY id',
++              [p.missionId],
++            )
++          ).rows as { id: string; state: string }[];
++          const index = peers.findIndex((peer) => peer.id === p.agentId);
++          invariant(
++            peers.length >= 2 && index >= 0,
++            'DISCUSSION_PEERS_REQUIRED',
++            'Discussion requires at least two peers',
++          );
++          return {
++            identity: p,
++            roadmap: { path: m.roadmap_path, text: m.roadmap_text, hash: m.roadmap_hash },
++            workflow: discussionInstructions,
++            profile: this.workflow,
++            peers,
++            discussionPartner: peers[(index + 1) % peers.length].id,
++            inbox: await this.a2a.poll(p),
++            checkpoints,
++          };
++        }
+         return {
+           identity: p,
+           roadmap: { path: m.roadmap_path, text: m.roadmap_text, hash: m.roadmap_hash },
+           board: await this.snapshot(p),
+           checkpoints: checkpoints.rows,
+           protocol: { a2a: '1.0', mcp: 'Streamable HTTP' },
++          profile: this.workflow,
++          workflow: coordinationInstructions,
+         };
+       },
+     );
+@@ -226,10 +267,11 @@ export class MeshTools {
+     );
+     tool(
+       'mesh_reply',
+-      'Answer or advance a task addressed to your stable peer. Terminal tasks remain terminal; follow-up conversations need a new task.',
++      'Answer a task addressed to your peer. Include the incoming deliveryId to acknowledge that request in the same transaction. Terminal tasks remain terminal; acknowledge terminal answers with mesh_ack.',
+       {
+         taskId: id,
+         messageId: id,
++        deliveryId: id.optional(),
+         text: text.optional(),
+         data: z.unknown().optional(),
+         state: z.enum(['completed', 'working', 'input-required', 'rejected', 'failed']).optional(),
+@@ -246,8 +288,11 @@ export class MeshTools {
+     );
+     tool(
+       'mesh_poll',
+-      'Read full durable inbox messages without acknowledging them. Record returned workRevision in a final idle handoff.',
+-      { limit: z.number().int().min(1).max(128).optional() },
++      'Read pending inbox messages without acknowledging them. waitMs waits for actual pending mail, avoiding empty refreshes. Use mesh_yield for a final handoff revision.',
++      {
++        limit: z.number().int().min(1).max(128).optional(),
++        waitMs: z.number().int().min(0).max(30_000).optional(),
++      },
+       true,
+       async (a) => {
+         const result = await this.a2a.poll(p, a);
+@@ -442,7 +487,7 @@ export class MeshTools {
+     );
+     tool(
+       'mesh_checkpoint',
+-      'Persist a durable handoff containing files, decisions, tests, unfinished changes, pending questions, and next useful work.',
++      'Persist a concise handoff with evidence and unresolved work. Omit id for a new record; reusing an id requires exactly the same body.',
+       { id: id.optional(), body: z.unknown() },
+       false,
+       (a) => this.store.checkpoint(p, a.body, a.id),
+diff --git a/test/a2a.test.ts b/test/a2a.test.ts
+index 4d0f732..24b0576 100644
+--- a/test/a2a.test.ts
++++ b/test/a2a.test.ts
+@@ -180,6 +180,77 @@ function request(messageId: string, text: string, extra: Record<string, unknown>
+   });
+ }
+ 
++test('reply and request acknowledgment commit atomically and replay without duplicate mail', async (t) => {
++  const h = await harness();
++  t.after(() => h.close());
++  const sender = h.current('A1');
++  const receiver = h.current('A2');
++  const first = await h.service.send(sender, {
++    recipientId: 'A2',
++    messageId: 'request-one',
++    text: 'Compare options.',
++  });
++  await h.service.send(sender, {
++    recipientId: 'A2',
++    messageId: 'request-two',
++    text: 'A separate question.',
++  });
++  const inbox = await h.service.poll(receiver);
++  const input = {
++    taskId: first.taskId!,
++    messageId: 'atomic-answer',
++    deliveryId: inbox.messages.find((m) => m.messageId === 'request-one')!.deliveryId,
++    text: 'First option is clearer because it separates decisions.',
++    state: 'completed' as const,
++  };
++  await assert.rejects(
++    h.service.reply(receiver, {
++      ...input,
++      deliveryId: inbox.messages.find((m) => m.messageId === 'request-two')!.deliveryId,
++    }),
++    (error: any) => error.code === 'INVALID_REPLY_DELIVERY',
++  );
++  h.failNextEvent('message.reply.accepted');
++  await assert.rejects(h.service.reply(receiver, input));
++  assert.equal((await h.service.poll(receiver)).messages.length, 2);
++  assert.equal((await h.service.poll(sender)).messages.length, 0);
++  const reply = await h.service.reply(receiver, input);
++  assert.equal(reply.acknowledgedDeliveryId, input.deliveryId);
++  assert.equal((await h.service.reply(receiver, input)).replayed, true);
++  assert.equal((await h.service.poll(receiver)).messages.length, 1);
++  assert.equal((await h.service.poll(sender)).messages.length, 1);
++  await assert.rejects(
++    h.service.reply(receiver, { ...input, deliveryId: undefined }),
++    /different payload|different content|different message/i,
++  );
++});
++
++test('inbox waits wake for mail, time out empty, and stop when the run is fenced', async (t) => {
++  const h = await harness();
++  t.after(() => h.close());
++  let settled = false;
++  const waiting = h.service.poll(h.current('A2'), { waitMs: 2000 }).then((result) => {
++    settled = true;
++    return result;
++  });
++  await h.db.query("UPDATE missions SET revision=revision+1 WHERE id='mission-a'");
++  await delay(40);
++  assert.equal(settled, false);
++  await h.service.send(h.current('A1'), {
++    recipientId: 'A2',
++    messageId: 'wake',
++    text: 'Question after waiting.',
++  });
++  assert.equal((await waiting).messages.length, 1);
++  assert.equal((await h.traceEvents()).filter((e) => e.kind === 'mailbox.polled').length, 1);
++  assert.equal((await h.service.poll(h.current('A3'), { waitMs: 5 })).messages.length, 0);
++  await assert.rejects(h.service.poll(h.current('A3'), { waitMs: -1 }), /waitMs/);
++  const fenced = h.service.poll(h.current('A3'), { waitMs: 2000 });
++  const rejection = assert.rejects(fenced, (error: any) => error.code === 'STALE_RUN');
++  h.rotate('A3');
++  await rejection;
++});
++
+ test('independent A2A SDK client, durable replies, participant scope, and complete message trace', async (t) => {
+   const h = await harness();
+   t.after(() => h.close());
+diff --git a/test/daemon.test.ts b/test/daemon.test.ts
+index 9af78d1..9449741 100644
+--- a/test/daemon.test.ts
++++ b/test/daemon.test.ts
+@@ -13,7 +13,7 @@ import { exportMission, messages, metrics } from '../src/observer.js';
+ import { readEvents } from '../src/trace.js';
+ const exec = promisify(execFile);
+ 
+-async function fixture() {
++async function fixture(workflow: 'implementation' | 'discussion' = 'implementation') {
+   const directory = await mkdtemp(join(tmpdir(), 'mesh-integration-'));
+   const repo = join(directory, 'repo');
+   await mkdir(repo);
+@@ -30,7 +30,8 @@ async function fixture() {
+     repo,
+     runtimeDir: join(directory, 'runtime'),
+     roadmapPath: 'ROADMAP.md',
+-    agents: 2,
++    agents: workflow === 'discussion' ? 3 : 2,
++    config: { workflow },
+     port: 0,
+     workspace: {
+       commandBuilder: async (o) => ({
+@@ -98,6 +99,27 @@ async function fixture() {
+   };
+ }
+ 
++test('discussion profile exposes only communication tools and gives each peer one partner', async (t) => {
++  const f = await fixture('discussion');
++  t.after(f.close);
++  assert.deepEqual((await f.ca.listTools()).tools.map((tool) => tool.name).sort(), [
++    'mesh_ack',
++    'mesh_checkpoint',
++    'mesh_join',
++    'mesh_poll',
++    'mesh_reply',
++    'mesh_send',
++    'mesh_yield',
++  ]);
++  const joined = await f.call(f.ca, 'mesh_join');
++  assert.equal(joined.profile, 'discussion');
++  assert.equal(joined.discussionPartner, 'A2');
++  assert.equal((await f.call(f.cb, 'mesh_join')).discussionPartner, 'A3');
++  assert.equal(joined.inbox.messages.length, 0);
++  assert.equal(joined.board, undefined);
++  await assert.rejects(f.call(f.ca, 'mesh_propose_completion', { operationId: 'not-available' }));
++});
++
+ test('independent MCP peers consult over A2A, publish in one checkout, and complete with a traced final barrier', async (t) => {
+   const f = await fixture();
+   t.after(f.close);

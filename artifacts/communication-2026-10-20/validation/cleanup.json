@@ -1,0 +1,21 @@
+{
+  "removed": [
+    {
+      "path": "/private/tmp/mesh-exec-communication-20261020/candidate/dist",
+      "bytes": 572455
+    },
+    {
+      "path": "/private/tmp/mesh-exec-communication-20261020/refined-candidate/dist",
+      "bytes": 576145
+    }
+  ],
+  "reclaimedFileBytes": 1148600,
+  "freeBytesAfter": 11646451712,
+  "ports": {
+    "52639": "closed",
+    "5432": "listening",
+    "55433": "listening"
+  },
+  "processesStopped": [],
+  "note": "Trial daemon already stopped; no trial CLI peers or automated browsers remain. Other chats services, root dist, source, temporary candidate source/runtime, and qualification evidence preserved."
+}

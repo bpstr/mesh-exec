@@ -3,6 +3,8 @@ dist/
 coverage/
 *.log
 .mesh/
+.codanna/
+.fastembed_cache
 .env
 .env.*
 !.env.example

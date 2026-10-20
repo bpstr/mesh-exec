@@ -1,0 +1,68 @@
+[
+  {
+    "operation_id": "a4-publish-core-tests",
+    "agent_id": "A4",
+    "run_id": "fae615e3-b92c-4139-baeb-6c90d147e1aa",
+    "kind": "patch",
+    "state": "applied",
+    "request": {
+      "changes": [
+        {
+          "path": "slugify.mjs",
+          "expectedHash": null
+        },
+        {
+          "path": "slugify.test.mjs",
+          "expectedHash": null
+        }
+      ],
+      "claimId": "a4-real-paths",
+      "operationId": "a4-publish-core-tests"
+    },
+    "result": {
+      "files": [
+        {
+          "hash": "6ea1742b8ed6d8eade62b09dca94c0d15ea4712428029adc0d0ae053082c4219",
+          "path": "slugify.mjs"
+        },
+        {
+          "hash": "8bda2b1993d932d8576e4e0bdbeb211680f73bb62a26c676f9760158daf1eb1c",
+          "path": "slugify.test.mjs"
+        }
+      ],
+      "revision": 1
+    },
+    "error": null,
+    "started_at": "2026-10-20T17:08:32.467Z",
+    "updated_at": "2026-10-20T17:08:32.522Z"
+  },
+  {
+    "operation_id": "a1-publish-cli",
+    "agent_id": "A1",
+    "run_id": "933dc639-bf9d-4e86-978b-726a393f4db2",
+    "kind": "patch",
+    "state": "applied",
+    "request": {
+      "changes": [
+        {
+          "path": "cli.mjs",
+          "expectedHash": null
+        }
+      ],
+      "claimId": "a1-cli",
+      "operationId": "a1-publish-cli"
+    },
+    "result": {
+      "files": [
+        {
+          "hash": "643ab99871f2d613bb9f43774ad79bbbcc364ee95333de79de3af0c2bc42d52d",
+          "path": "cli.mjs"
+        }
+      ],
+      "revision": 2
+    },
+    "error": null,
+    "started_at": "2026-10-20T17:08:33.183Z",
+    "updated_at": "2026-10-20T17:08:33.203Z"
+  }
+]

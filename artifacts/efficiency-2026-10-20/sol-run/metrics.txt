@@ -1,0 +1,39 @@
+# HELP mesh_runs Run lifecycle counts
+# TYPE mesh_runs gauge
+mesh_runs{mission="ceeedb33-848d-4129-a921-6bc37295349f",state="exited"} 5
+# HELP mesh_requirements Roadmap requirements by state
+# TYPE mesh_requirements gauge
+mesh_requirements{mission="ceeedb33-848d-4129-a921-6bc37295349f",state="implemented"} 1
+# HELP mesh_outbox Outgoing interactions by delivery state
+# TYPE mesh_outbox gauge
+mesh_outbox{mission="ceeedb33-848d-4129-a921-6bc37295349f",state="delivered"} 3
+# HELP mesh_messages_pending Unacknowledged mailbox deliveries
+# TYPE mesh_messages_pending gauge
+mesh_messages_pending{mission="ceeedb33-848d-4129-a921-6bc37295349f"} 0
+# HELP mesh_message_oldest_pending_seconds Age of oldest unacknowledged delivery
+# TYPE mesh_message_oldest_pending_seconds gauge
+mesh_message_oldest_pending_seconds{mission="ceeedb33-848d-4129-a921-6bc37295349f"} 0
+# HELP mesh_operations Workspace operations by state
+# TYPE mesh_operations gauge
+mesh_operations{mission="ceeedb33-848d-4129-a921-6bc37295349f",kind="command",state="cancelled"} 1
+mesh_operations{mission="ceeedb33-848d-4129-a921-6bc37295349f",kind="command",state="succeeded"} 2
+mesh_operations{mission="ceeedb33-848d-4129-a921-6bc37295349f",kind="patch",state="applied"} 4
+# HELP mesh_usage_runs Runs with or without valid CLI usage receipts
+# TYPE mesh_usage_runs gauge
+mesh_usage_runs{mission="ceeedb33-848d-4129-a921-6bc37295349f",reporting="present"} 5
+mesh_usage_runs{mission="ceeedb33-848d-4129-a921-6bc37295349f",reporting="missing"} 0
+# HELP mesh_usage_receipts Valid and malformed CLI usage receipts
+# TYPE mesh_usage_receipts gauge
+mesh_usage_receipts{mission="ceeedb33-848d-4129-a921-6bc37295349f",validity="valid"} 5
+mesh_usage_receipts{mission="ceeedb33-848d-4129-a921-6bc37295349f",validity="invalid"} 0
+# HELP mesh_reported_tokens Tokens in valid CLI receipts only; unreported usage is unknown; cached input is included in input
+# TYPE mesh_reported_tokens gauge
+mesh_reported_tokens{mission="ceeedb33-848d-4129-a921-6bc37295349f",kind="input"} 3129852
+mesh_reported_tokens{mission="ceeedb33-848d-4129-a921-6bc37295349f",kind="cachedInput"} 2937600
+mesh_reported_tokens{mission="ceeedb33-848d-4129-a921-6bc37295349f",kind="output"} 10671
+mesh_reported_tokens{mission="ceeedb33-848d-4129-a921-6bc37295349f",kind="total"} 3140523
+# HELP mesh_events_total Selected durable event counts
+# TYPE mesh_events_total counter
+mesh_events_total{mission="ceeedb33-848d-4129-a921-6bc37295349f",kind="message.acknowledged"} 6
+mesh_events_total{mission="ceeedb33-848d-4129-a921-6bc37295349f",kind="message.ingress.accepted"} 3
+mesh_events_total{mission="ceeedb33-848d-4129-a921-6bc37295349f",kind="message.reply.accepted"} 3

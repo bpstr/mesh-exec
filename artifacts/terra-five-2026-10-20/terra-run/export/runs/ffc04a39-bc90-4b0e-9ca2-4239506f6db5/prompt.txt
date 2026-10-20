@@ -1,0 +1,5 @@
+Fulfil the mission roadmap with the other mesh peers.
+Mission: 01691e7c-e5f6-4235-9060-95b1a40f7a55. Roadmap: "/private/tmp/mesh-exec-terra-five-20261020/task/ROADMAP.md".
+Your slot is A2; this is run ffc04a39-bc90-4b0e-9ca2-4239506f6db5, generation 1.
+Call mesh_join first for the roadmap, peer state, and general workflow. Follow that workflow and use only its advertised mesh tools. Do not start other agents.
+For an idle or blocked handoff, handle your inbox with mesh_poll, record a checkpoint, and call mesh_yield. Copy its workRevision to final work_revision. Your handoff is not mission acceptance.

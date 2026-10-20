@@ -7,6 +7,7 @@
   "maxMinutes": 120,
   "runMinutes": 20,
   "heavyCommands": 2,
+  "queuedCommands": 32,
   "codexBinary": "codex",
   "port": 7331,
   "verification": [

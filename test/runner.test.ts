@@ -123,7 +123,7 @@ if (mode === 'oversized') process.stdout.write('X'.repeat(1024 * 1024 + 3) + '\\
 if (mode === 'hang') setInterval(() => {}, 1000);
 let prompt = '';
 for await (const chunk of process.stdin) prompt += chunk.toString();
-if (!prompt.includes('Consult with the other mesh peers')) process.exit(44);
+if (!prompt.includes('mesh_join')) process.exit(44);
 if (mode === 'hang') { console.log(JSON.stringify({ type: 'thread.started', thread_id: 'hung-thread' })); }
 else if (mode === 'index-failure') {
   const path = process.argv[process.argv.indexOf('--output-last-message') + 1];
@@ -141,8 +141,8 @@ else {
   process.stdout.write(bytes.subarray(bytes.length - 25));
   process.stderr.write('diagnostic ' + token + '\\n');
   await delay(mode === 'closing-workers' && process.env.MESH_SLOT_ID === 'A2' ? 100 : Number(process.env.MESH_TEST_DELAY ?? 3));
-  const outcome = (mode === 'idle' || (mode === 'idle-first-slot' && process.env.MESH_SLOT_ID === 'A1')) && generation === 1 ? 'idle' : 'continue';
-  const result = { outcome, summary: 'handoff ' + token, checkpoint_id: null, waiting_on: outcome === 'idle' ? ['decision-1'] : [], work_revision: outcome === 'idle' ? '1' : null };
+  const outcome = mode === 'idle-always' ? 'idle' : generation === 1 && (mode === 'blocked' || (mode === 'blocked-first-slot' && process.env.MESH_SLOT_ID === 'A1')) ? 'blocked' : mode === 'idle' && generation === 1 ? 'idle' : 'continue';
+  const result = { outcome, summary: 'handoff ' + token, checkpoint_id: null, waiting_on: ['idle', 'blocked'].includes(outcome) ? ['decision-1'] : [], work_revision: ['idle', 'blocked'].includes(outcome) ? '1' : null };
   const path = process.argv[process.argv.indexOf('--output-last-message') + 1];
   if (mode !== 'missing-result') await writeFile(path, mode === 'invalid-result' ? 'invalid final output 🙂 ' + token : JSON.stringify(result));
   process.stdout.write(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 7, output_tokens: 3 } }) + '\\n');
@@ -533,8 +533,41 @@ test('output capture is attached before asynchronous PID persistence for a short
   }
 });
 
-test('idle peers park at the mesh_yield cursor and see work arriving during exit', async () => {
-  const f = await fixture('idle');
+test('idle exits replace every slot without a work revision and stop at the elapsed limit', async () => {
+  const f = await fixture('idle-always');
+  try {
+    f.options.concurrency = 5;
+    f.options.maxRuns = 1000;
+    f.options.maxElapsedMs = 1500;
+    let peak = 0;
+    const spawnWorker = f.options.spawn!;
+    f.options.spawn = (command, args, options) => {
+      peak = Math.max(peak, f.store.live.size);
+      assert.ok(f.store.live.size <= 5);
+      return spawnWorker(command, args, options);
+    };
+    const started = Date.now();
+    const summary = await runMesh(f.options);
+    assert.equal(summary.state, 'resource-limit');
+    assert.equal(f.store.stopReason, 'Maximum elapsed time reached');
+    assert.ok(Date.now() - started < 5000);
+    assert.equal(peak, 5);
+    assert.equal(f.store.generations.size, 5);
+    for (const generation of f.store.generations.values()) assert.ok(generation >= 2);
+    assert.equal(f.store.revision, '1');
+    assert.deepEqual(f.store.waitedRevisions, []);
+    assert.equal(summary.runsStarted, summary.runsFinished);
+    assert.equal(f.store.live.size, 0);
+    assert.ok(f.store.ends.every(({ end }) => end.reaped));
+    assert.ok(f.children.every((child) => child.exitCode !== null || child.signalCode !== null));
+    assert.ok(!f.events.some((event) => event.kind === 'slot.parked'));
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('blocked peers park at the mesh_yield cursor and see work arriving during exit', async () => {
+  const f = await fixture('blocked');
   try {
     f.options.maxRuns = 2;
     f.store.beforeEnd = (principal) => {
@@ -614,11 +647,102 @@ test('closing preserves already-running peers and waits for mission acceptance w
   }
 });
 
-test('parked populations honor the hard elapsed limit without repeated idle runs', async () => {
-  const f = await fixture('idle');
+test('acceptance drains existing peers, retains handoffs and usage, and never replaces them', async () => {
+  const f = await fixture();
+  try {
+    f.options.concurrency = 2;
+    f.options.maxRuns = 8;
+    f.options.completionGraceMs = 1000;
+    f.options.environment!.MESH_TEST_DELAY = '200';
+    const record = f.options.events;
+    let starts = 0;
+    let leasesAtDrain = 0;
+    f.options.events = async (event) => {
+      const result = await record(event);
+      if (event.kind === 'codex.thread.started' && ++starts === 2) {
+        f.store.state = 'completed';
+        f.store.revision = '2';
+      }
+      if (event.kind === 'supervisor.draining') leasesAtDrain = f.store.leases;
+      return result;
+    };
+    const summary = await runMesh(f.options);
+    assert.equal(summary.state, 'completed');
+    assert.equal(summary.runsStarted, 2);
+    assert.equal(summary.runsFinished, 2);
+    assert.equal(f.events.filter((e) => e.kind === 'supervisor.draining').length, 1);
+    assert.equal(f.events.filter((e) => e.kind === 'codex.turn.completed').length, 2);
+    assert.ok(f.store.leases > leasesAtDrain, 'leases must renew during drain');
+    assert.ok(!f.events.some((e) => e.kind === 'run.stop.requested'));
+    for (const { principal, end } of f.store.ends) {
+      assert.equal(end.status, 'exited');
+      assert.equal(end.result?.outcome, 'continue');
+      const file = join(
+        f.options.logRoot,
+        principal.missionId,
+        principal.agentId,
+        principal.runId,
+        'result.json',
+      );
+      assert.equal(JSON.parse(await readFile(file, 'utf8')).outcome, 'continue');
+    }
+  } finally {
+    await f.cleanup();
+  }
+});
+
+for (const stop of ['grace', 'elapsed', 'external'] as const) {
+  test(`completed mission stops an unresponsive peer at the ${stop} boundary`, async () => {
+    const f = await fixture('hang');
+    const controller = new AbortController();
+    try {
+      f.options.signal = controller.signal;
+      f.options.maxRuns = 8;
+      f.options.maxElapsedMs = stop === 'elapsed' ? 600 : 5000;
+      f.options.runTimeoutMs = 5000;
+      f.options.completionGraceMs = stop === 'grace' ? 80 : 5000;
+      const record = f.options.events;
+      f.options.events = async (event) => {
+        const result = await record(event);
+        // Short stdout records can remain in the streaming redactor until EOF.
+        // Synchronize acceptance with process startup, independently of output.
+        if (event.kind === 'run.started') f.store.state = 'completed';
+        if (event.kind === 'supervisor.draining' && stop === 'external') controller.abort();
+        return result;
+      };
+      const began = Date.now();
+      const summary = await runMesh(f.options);
+      assert.equal(summary.state, 'completed', 'shutdown must not erase acceptance');
+      assert.equal(summary.runsStarted, 1);
+      assert.equal(f.store.ends[0].end.status, 'aborted');
+      assert.equal(f.store.ends[0].end.reaped, true);
+      assert.ok(Date.now() - began < 2500, 'must not wait for the five-second grace');
+      const ended = f.events.find((e) => e.kind === 'supervisor.ended')!;
+      assert.equal(
+        (ended.data as { shutdownReason: string }).shutdownReason,
+        stop === 'grace'
+          ? 'Completion drain deadline reached'
+          : stop === 'elapsed'
+            ? 'Maximum elapsed time reached'
+            : 'User stopped the runner',
+      );
+      const drain = f.events.find((e) => e.kind === 'supervisor.draining')!.data as {
+        graceMs: number;
+        remainingMs: number;
+      };
+      assert.ok(drain.graceMs <= drain.remainingMs);
+    } finally {
+      controller.abort();
+      await f.cleanup();
+    }
+  });
+}
+
+test('blocked populations honor the hard elapsed limit without repeated runs', async () => {
+  const f = await fixture('blocked');
   try {
     f.options.maxRuns = 8;
-    f.options.maxElapsedMs = 300;
+    f.options.maxElapsedMs = 1000;
     const summary = await runMesh(f.options);
     assert.equal(summary.state, 'resource-limit');
     assert.equal(summary.runsStarted, 1);
@@ -629,7 +753,7 @@ test('parked populations honor the hard elapsed limit without repeated idle runs
 });
 
 test('a slot already parked exits when another slot exhausts the shared run budget', async () => {
-  const f = await fixture('idle-first-slot');
+  const f = await fixture('blocked-first-slot');
   try {
     f.options.concurrency = 2;
     f.options.maxRuns = 3;

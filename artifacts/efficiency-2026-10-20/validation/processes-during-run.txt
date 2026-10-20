@@ -1,0 +1,2 @@
+Task-owned process snapshot; unrelated command lines omitted.
+65109 65067    00:17 node artifacts/efficiency-2026-10-20/pilot.mjs

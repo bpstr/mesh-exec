@@ -18,6 +18,8 @@ Status includes the recorded roadmap, mission state and revision, slot generatio
 
 Use this to distinguish a busy population from one waiting for coordination. A parked slot is a persistent identity with a handoff, not a lost agent. A resource-limit or stopped mission is not a completed roadmap.
 
+Command admission has its own trace: `workspace.command.admitted`, `workspace.command.rejected`, `workspace.command.queued`, and `workspace.command.capacity_acquired`. The last records execution-permit `waitMs`; it excludes subsequent source-gate waiting. `daemon.ready` records the effective execution and backlog limits for that invocation. Filter with `--kind-prefix workspace.command.` or an operation ID; see [workload boundaries](workloads.md) for counting and cancellation semantics.
+
 ## Read the actual internal messages
 
 ```bash
@@ -103,7 +105,7 @@ Identifiers are not all interchangeable. A stable slot may have many runs; one A
 
 Trace sequence allocation locks the mission row and commits the event in that same transaction. A higher committed sequence cannot overtake a lower uncommitted sequence from another writer. This prevents the late-commit gap that a naïve independent sequence allocation can create in a polling event reader. The sequence is mission-local, and wall-clock timestamps are descriptive rather than the ordering authority.
 
-`workRevision` is separate. It advances for meaningful coordination changes, such as a newly accepted message, released claim, source change, or changed decision. Polling, trace insertion, and a transport retry alone do not create new work. This distinction keeps tracing from waking idle agents indefinitely.
+`workRevision` is separate. It advances for meaningful coordination changes, such as a newly accepted message, released claim, source change, or changed decision. Polling, trace insertion, and a transport retry alone do not create new work. This distinction keeps tracing from waking blocked agents indefinitely.
 
 ### What is captured
 
@@ -183,6 +185,17 @@ Trace-only export follows all matching pages instead of stopping at the display 
 
 ## Metrics and local HTTP access
 
+Status and exported `mission.json` include `usage`: valid and malformed
+`codex.turn.completed` receipt counts, runs with and without a valid receipt,
+and reported input, cached input, output, and total tokens. Cached input is
+already included in input; total is input plus output. These are observed
+receipts, not an estimate of missing usage or a monetary charge. A killed worker
+may have consumed tokens without emitting a receipt.
+
+Metrics expose the same evidence as `mesh_usage_runs`, `mesh_usage_receipts`,
+and `mesh_reported_tokens`. Always read the receipt coverage alongside the
+token totals; zero reported tokens does not prove zero consumption.
+
 ```bash
 mesh metrics --mission MISSION_ID
 ```
@@ -224,4 +237,15 @@ For duplicate-looking messages, compare `messageId`, `taskId`, outbox attempt ID
 
 For a failed completion attempt, inspect its operation ID and `completion.proposal.*` events, the current requirement/coverage evidence, unhandled mail, open consultations, and verification logs. Completion failure and budget exhaustion remain recorded outcomes rather than being converted into success.
 
-For a parked population, check the semantic revision and pending messages before interpreting low CPU usage as a failure. A run that cannot find independent work should park. Source-publication or process-recovery quarantine needs investigation before new writers can be admitted.
+After acceptance, `supervisor.draining` records the allowed `graceMs`, remaining
+mission budget in `remainingMs`, and unchanged wall-clock `deadlineAt`. During
+this phase, final checkpoints, `result.json` handoffs and `codex.turn.completed`
+usage events can still arrive from existing peers. No new run is admitted.
+`supervisor.ended.shutdownReason` distinguishes grace expiry, the original
+deadline and operator cancellation when shutdown interrupts a peer. These
+interruptions preserve the completed mission state; inspect `run.process.ended`
+to distinguish a normal exit from a terminated peer. Missing usage receipts
+remain unknown, including after a crash or deadline; acceptance alone does not
+establish token totals. Historical runs retain their original missing receipts.
+
+For a parked population, check the semantic revision and pending messages before interpreting low CPU usage as a failure. Blocked runs park; an idle exit starts a fresh generation while admission remains open. Source-publication or process-recovery quarantine needs investigation before new writers can be admitted.

@@ -127,17 +127,11 @@ export function buildCodexInvocation(options: CodexInvocationOptions): CodexInvo
     ? options.roadmapPath
     : resolve(cwd, options.roadmapPath);
   const prompt = [
-    'Implement the mission roadmap in this repository. Consult with the other mesh peers.',
+    'Fulfil the mission roadmap with the other mesh peers.',
     `Mission: ${options.missionId}. Roadmap: ${JSON.stringify(roadmapPath)}.`,
     `Your slot is ${options.slotId}; this is run ${options.runId}, generation ${options.generation}.`,
-    'Call mesh_join first. Read the original roadmap, applicable repository instructions, the shared board, and your durable inbox.',
-    'Choose your own useful contribution. Consult peers whose work or knowledge affects it, and claim resources before changing them.',
-    'The local checkout is read-only. Authorized changes and command execution use the mesh workspace tools, which enforce shared-workspace ownership.',
-    'Do not start other agent CLIs or subagents. The runner owns the population; all peers share this same mission.',
-    'Use mesh_poll at bootstrap, at work transitions, before dependent changes, and before exit. A notification is not an acknowledgment: handle messages explicitly with mesh_ack.',
-    'Record evidence, decisions, corrections, and a checkpoint through mesh tools before exiting. When useful work is unavailable, yield with its dependency.',
-    'For idle or blocked outcomes, call mesh_yield and copy its returned workRevision into the final work_revision field, so arriving work cannot be lost during replacement.',
-    'Propose completion only through the mesh acceptance process. Your final message is a structured run handoff, not authority to complete the mission.',
+    'Call mesh_join first for the roadmap, peer state, and general workflow. Follow that workflow and use only its advertised mesh tools. Do not start other agents.',
+    'Follow the joined workflow participation policy. In implementation missions, finishing your files or calling mesh_yield does not finish your participation: use mesh_wait to remain reachable until acceptance or an operator stop. Do not send a final handoff while mayExit=false. Handle your inbox with mesh_poll; when the workflow permits exit, checkpoint and copy workRevision into final work_revision.',
   ].join('\n');
 
   const args = [

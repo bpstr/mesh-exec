@@ -1,0 +1,22 @@
+# HELP mesh_runs Run lifecycle counts
+# TYPE mesh_runs gauge
+mesh_runs{mission="01691e7c-e5f6-4235-9060-95b1a40f7a55",state="exited"} 5
+# HELP mesh_requirements Roadmap requirements by state
+# TYPE mesh_requirements gauge
+mesh_requirements{mission="01691e7c-e5f6-4235-9060-95b1a40f7a55",state="implemented"} 1
+# HELP mesh_outbox Outgoing interactions by delivery state
+# TYPE mesh_outbox gauge
+mesh_outbox{mission="01691e7c-e5f6-4235-9060-95b1a40f7a55",state="delivered"} 2
+# HELP mesh_messages_pending Unacknowledged mailbox deliveries
+# TYPE mesh_messages_pending gauge
+mesh_messages_pending{mission="01691e7c-e5f6-4235-9060-95b1a40f7a55"} 2
+# HELP mesh_message_oldest_pending_seconds Age of oldest unacknowledged delivery
+# TYPE mesh_message_oldest_pending_seconds gauge
+mesh_message_oldest_pending_seconds{mission="01691e7c-e5f6-4235-9060-95b1a40f7a55"} 134.259842
+# HELP mesh_operations Workspace operations by state
+# TYPE mesh_operations gauge
+mesh_operations{mission="01691e7c-e5f6-4235-9060-95b1a40f7a55",kind="command",state="succeeded"} 4
+mesh_operations{mission="01691e7c-e5f6-4235-9060-95b1a40f7a55",kind="patch",state="applied"} 4
+# HELP mesh_events_total Selected durable event counts
+# TYPE mesh_events_total counter
+mesh_events_total{mission="01691e7c-e5f6-4235-9060-95b1a40f7a55",kind="message.ingress.accepted"} 2

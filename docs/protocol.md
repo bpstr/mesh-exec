@@ -29,29 +29,32 @@ The daemon exposes stateless Streamable HTTP MCP at `POST /mcp`. The runner conf
 
 The table lists required arguments and important options. Tools return JSON in MCP text content; failures return `isError: true` with an error message and, when available, a code and details.
 
-| Tool                      | Inputs                                                                                                                       | Result or effect                                                                                           |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `mesh_join`               | None                                                                                                                         | Authenticated identity, original roadmap, board, recent checkpoints, and common workflow                   |
-| `mesh_board`              | Optional `query`                                                                                                             | Requirements, intentions, claims, knowledge, peers, and mission revision; search uses PostgreSQL full text |
-| `mesh_find_peers`         | Optional `query`                                                                                                             | Stable peer identities and answerability offers, including parked custodians                               |
-| `mesh_claim`              | `id`, `resources`, `description`; optional `intentionId`, `requirementIds`                                                   | Atomically acquire a resource bundle, or receive its conflicts                                             |
-| `mesh_send`               | `recipientId`, `messageId`, and `text` and/or `data`; optional `taskId`, `contextId`, `kind`, correlation fields, references | Commit outgoing intent, perform A2A delivery, and return an outbox receipt                                 |
-| `mesh_reply`              | `taskId`, `messageId`, and `text` and/or `data`; optional `state`                                                            | Answer or advance a task addressed to this stable peer; preserve its original task ID                      |
-| `mesh_cancel`             | `recipientId`, `taskId`                                                                                                      | Cancel an obsolete consultation and notify its counterpart                                                 |
-| `mesh_poll`               | Optional `limit`, 1–128                                                                                                      | Full pending deliveries, pending count, and `workRevision`; does not acknowledge them                      |
-| `mesh_ack`                | `deliveryId`; optional `disposition`, `reason`                                                                               | Record handling, deferral, rejection, or supersession of a delivery                                        |
-| `mesh_remember`           | `id`, `kind`, `title`, `body`; optional revision, evidence, conditions, unknowns, readiness, status, edges                   | Publish or revise shared findings, decisions, offers, or blockers                                          |
-| `mesh_requirement`        | `id`, literal roadmap `anchor`, `title`, `criteria`; optional revision, state, evidence                                      | Maintain an agent-interpreted acceptance requirement                                                       |
-| `mesh_review`             | `id`, `kind`, `manifestHash`, `verdict`, `reasoning`; requirement reviews also identify target ID/revision                   | Record a current independent requirement or coverage review                                                |
-| `mesh_read`               | `paths`; optional `manifest`                                                                                                 | Coherent UTF-8 file snapshots with hashes; optionally the source manifest                                  |
-| `mesh_patch`              | `operationId`, `changes`; optional `claimId`, dependencies                                                                   | Publish guarded complete-file replacements or deletions                                                    |
-| `mesh_exec`               | `operationId`, `argv`, `mode`; optional cwd, claim, timeout, network, environment, dependencies                              | Start a bounded command asynchronously and return a durable operation handle                               |
-| `mesh_operation`          | `operationId`; optional `cancel`                                                                                             | Inspect command, patch, or completion status; cancellation applies to the caller's active command          |
-| `mesh_checkpoint`         | `body`; optional `id`                                                                                                        | Persist a handoff for the stable slot                                                                      |
-| `mesh_yield`              | `reason`; optional `waitingOn`                                                                                               | Cancel/reap this run's commands, release claims, park intentions, and return a wakeup revision             |
-| `mesh_propose_completion` | `operationId`; optional `checks`, `timeoutMs`                                                                                | Start asynchronous final acceptance; inspect it with `mesh_operation`                                      |
+| Tool                      | Inputs                                                                                                                       | Result or effect                                                                                                             |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `mesh_join`               | None                                                                                                                         | Authenticated identity, original roadmap, board, recent checkpoints, and common workflow                                     |
+| `mesh_board`              | Optional `query`                                                                                                             | Requirements, intentions, claims, knowledge, peers, and mission revision; search uses PostgreSQL full text                   |
+| `mesh_find_peers`         | Optional `query`                                                                                                             | Stable peer identities and answerability offers, including parked custodians                                                 |
+| `mesh_claim`              | `id`, `resources`, `description`; optional `intentionId`, `requirementIds`                                                   | Atomically acquire a resource bundle, or receive its conflicts                                                               |
+| `mesh_send`               | `recipientId`, `messageId`, and `text` and/or `data`; optional `taskId`, `contextId`, `kind`, correlation fields, references | Commit outgoing intent, perform A2A delivery, and return an outbox receipt                                                   |
+| `mesh_reply`              | `taskId`, `messageId`, and `text` and/or `data`; optional `state`                                                            | Answer or advance a task addressed to this stable peer; preserve its original task ID                                        |
+| `mesh_cancel`             | `recipientId`, `taskId`                                                                                                      | Cancel an obsolete consultation and notify its counterpart                                                                   |
+| `mesh_poll`               | Optional `limit`, 1–128                                                                                                      | Full pending deliveries, pending count, and `workRevision`; does not acknowledge them                                        |
+| `mesh_ack`                | `deliveryId`; optional `disposition`, `reason`                                                                               | Record handling, deferral, rejection, or supersession of a delivery                                                          |
+| `mesh_remember`           | `id`, `kind`, `title`, `body`; optional revision, evidence, conditions, unknowns, readiness, status, edges                   | Publish or revise shared findings, decisions, offers, or blockers                                                            |
+| `mesh_requirement`        | `id`, literal roadmap `anchor`, `title`, `criteria`; optional revision, state, evidence                                      | Maintain an agent-interpreted acceptance requirement                                                                         |
+| `mesh_review`             | `id`, `kind`, `manifestHash`, `verdict`, `reasoning`; requirement reviews also identify target ID/revision                   | Record a current independent requirement or coverage review                                                                  |
+| `mesh_read`               | `paths`; optional `manifest`                                                                                                 | Coherent UTF-8 file snapshots with hashes; optionally the source manifest                                                    |
+| `mesh_patch`              | `operationId`, `changes`; optional `claimId`, dependencies                                                                   | Publish guarded complete-file replacements or deletions                                                                      |
+| `mesh_exec`               | `operationId`, `argv`, `mode`; optional cwd, claim, timeout, network, environment, dependencies                              | Start a bounded command asynchronously and return a durable operation handle                                                 |
+| `mesh_operation`          | `operationId`; optional `cancel`                                                                                             | Inspect command, patch, or completion status; cancellation applies to the caller's active command                            |
+| `mesh_checkpoint`         | `body`; optional `id`                                                                                                        | Persist a nonempty checkpoint object for the stable slot                                                                     |
+| `mesh_yield`              | `reason`; optional `waitingOn`                                                                                               | Release claims and return a wakeup revision plus implementation participation state; remain available while mayExit is false |
+| `mesh_wait`               | Optional `sinceRevision`, `waitMs` (0–30,000; default 20,000)                                                                | Remain in the same process; wake for messages, shared changes, or termination and return participation state                 |
+| `mesh_propose_completion` | `operationId`; optional `checks`, `timeoutMs`                                                                                | Start asynchronous final acceptance; inspect it with `mesh_operation`                                                        |
 
 `mesh_exec` and `mesh_propose_completion` return before the long operation finishes. Acceptance of the request is not a passing command or completed mission. `mesh_patch` is a bounded synchronous publication and also leaves a durable operation record.
+
+Command admission is bounded separately from execution. A new `mesh_exec` exceeding the configured accepted-work limit returns `command_queue_full` with `retryable: true`, observed capacity, and no workspace operation record. An identical accepted replay returns its existing handle even at capacity; changed arguments still conflict. Canceled execution-capacity waiters are removed before their run is released. See [workload boundaries](workloads.md) for the settings and exact scope.
 
 ## A normal run
 
@@ -60,7 +63,7 @@ The table lists required arguments and important options. Tools return JSON in M
 3. Claim the required resource bundle. A claim conflict is information for coordination, not an instruction from the runner to take a different task.
 4. Read coherent inputs, declare dependencies, publish changes, and inspect command results.
 5. Record findings, decisions, criteria evidence, corrections, and independent reviews. Handle inbox deliveries explicitly.
-6. Before exiting, poll again and checkpoint useful context. If idle or blocked, call `mesh_yield` and copy its returned `workRevision` into the final handoff.
+6. Checkpoint useful context and release claims with `mesh_yield`. Implementation peers remain available through acceptance: use `mesh_wait` while idle, handle returned messages, and inspect changed work. A timeout or empty inbox does not permit exit. See [participation lifecycle](coordination.md) for live-peer selection and terminal exit state.
 
 The handoff schema is:
 
@@ -74,9 +77,9 @@ The handoff schema is:
 }
 ```
 
-Allowed outcomes are `continue`, `idle`, `blocked`, and `completion_proposed`. The checkpoint and revision fields may be null in the schema, but idle/blocked peers should preserve the cursor returned by `mesh_yield`. Using a later arbitrary snapshot can hide work that arrived between the last useful read and parking.
+This schema describes a process handoff when one occurs; it is not permission to leave an active implementation mission. Allowed outcomes are `continue`, `idle`, `blocked`, and `completion_proposed`. The checkpoint and revision fields may be null in the schema, but idle/blocked peers should preserve the cursor returned by `mesh_yield`. If an idle process nevertheless exits, the runner can allocate a fresh generation while the mission is active and launch capacity remains. Blocked and completion-proposed exits park until the revision changes; using a later arbitrary snapshot can hide work that arrived between the last useful read and parking.
 
-Yield ends this run's workspace-writing opportunity. The successor chooses its next contribution using durable state; the handoff is not a queued assignment from a coordinator.
+Yield releases current claims but preserves the live process's ability to review, wait for messages, and reclaim work. An exited process needs a successor generation, which recovers from durable state; same-process waiting retains the current context.
 
 ## Actual A2A transport
 
@@ -176,6 +179,23 @@ The text interface accepts at most 128 files and 8 MiB per coherent read or patc
 The source manifest basis is `git-tracked-and-unignored`: tracked entries and non-ignored untracked entries, including content hash, file type, and mode. It records symlink targets without following them and records missing tracked files. Ignored build outputs, dependency directories, remote systems, and toolchain versions are not included in this source hash.
 
 ## Memory, evidence, and acceptance
+
+Board snapshots (including `mesh_join`) return `knowledgePage` with `limit`,
+`hasMore`, `nextCursor`, and a summary counting all matching findings, decisions,
+offers, blockers, resolved records, and stale records. The default page holds 50
+full records; `mesh_board` accepts `knowledgeLimit` from 1 to 100. Read older
+records by passing `nextCursor` as `knowledgeCursor`, repeating the same `query`
+if searching. A null cursor means the scan is complete. Explicit cursor or limit
+requests bypass `sinceRevision` suppression. Counts are deterministic metadata,
+not generated summaries of the records' content.
+
+Knowledge is ordered by update time descending, then ID descending. Cursors
+retain PostgreSQL timestamp precision, so equal timestamps do not skip records.
+Pages are live, not a frozen snapshot: edits can move records and new records
+can arrive ahead of the cursor. If `workRevision` changes during a scan, restart
+from the first page before relying on completeness. Resolved and stale knowledge
+remain available through pagination. Other board lists retain their existing
+bounds.
 
 `mesh_remember` stores versioned findings, decisions, offers, and blockers, with evidence, conditions, explicit unknowns, and readiness (`warm`, `parked`, or `unavailable`). Revisions require an expected revision. Typed links are `supports`, `challenges`, `depends-on`, `supersedes`, `affects`, and `answers`, and name a target revision. File changes and dependency revisions invalidate affected knowledge; stale decisions must be resolved before acceptance. The board is a shared record of attributed claims and evidence, not an instruction hierarchy.
 

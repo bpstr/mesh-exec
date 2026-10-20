@@ -1,0 +1,14 @@
+{
+  "removed": [
+    {
+      "path": "/Users/bpstr/Github/mesh-exec/.codanna",
+      "allocatedKiB": 632
+    },
+    {
+      "path": "/Users/bpstr/Github/mesh-exec/.codannaignore",
+      "allocatedKiB": 4
+    }
+  ],
+  "reclaimedKiB": 636,
+  "reason": "Inactive reproducible Codanna index and ignore file created by this review; source and qualification evidence preserved."
+}

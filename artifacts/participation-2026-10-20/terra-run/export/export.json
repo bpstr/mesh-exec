@@ -1,0 +1,56 @@
+{
+  "missionId": "7027ca64-f521-4476-ad5d-4ae12215bddb",
+  "exportedAt": "2026-10-20T18:06:10.286Z",
+  "events": 1016,
+  "artifacts": [
+    "runs/e473c9d6-5d7e-4d7b-b69e-45bb38478742/stdout.jsonl",
+    "runs/e473c9d6-5d7e-4d7b-b69e-45bb38478742/stderr.log",
+    "runs/e473c9d6-5d7e-4d7b-b69e-45bb38478742/prompt.txt",
+    "runs/e473c9d6-5d7e-4d7b-b69e-45bb38478742/result.schema.json",
+    "runs/a35af0d2-9e18-4578-9329-973fd1875296/stdout.jsonl",
+    "runs/a35af0d2-9e18-4578-9329-973fd1875296/stderr.log",
+    "runs/a35af0d2-9e18-4578-9329-973fd1875296/prompt.txt",
+    "runs/a35af0d2-9e18-4578-9329-973fd1875296/result.schema.json",
+    "runs/1f13fbfa-9f6a-48b1-bae6-c6060ba10661/stdout.jsonl",
+    "runs/1f13fbfa-9f6a-48b1-bae6-c6060ba10661/stderr.log",
+    "runs/1f13fbfa-9f6a-48b1-bae6-c6060ba10661/prompt.txt",
+    "runs/1f13fbfa-9f6a-48b1-bae6-c6060ba10661/result.schema.json",
+    "runs/09dce569-dc67-42c0-a4ed-9d96b67db062/stdout.jsonl",
+    "runs/09dce569-dc67-42c0-a4ed-9d96b67db062/stderr.log",
+    "runs/09dce569-dc67-42c0-a4ed-9d96b67db062/prompt.txt",
+    "runs/09dce569-dc67-42c0-a4ed-9d96b67db062/result.schema.json",
+    "runs/0013bc0a-32ac-4af7-b3a6-598fd46984d3/stdout.jsonl",
+    "runs/0013bc0a-32ac-4af7-b3a6-598fd46984d3/stderr.log",
+    "runs/0013bc0a-32ac-4af7-b3a6-598fd46984d3/prompt.txt",
+    "runs/0013bc0a-32ac-4af7-b3a6-598fd46984d3/result.schema.json",
+    "operations/a5-npm-test-final/stdout.log",
+    "operations/a5-npm-test-final/stderr.log",
+    "operations/a3-npm-test-v1/stdout.log",
+    "operations/a3-npm-test-v1/stderr.log",
+    "operations/a5-propose-final-v3%3Acheck%3A0/stdout.log",
+    "operations/a5-propose-final-v3%3Acheck%3A0/stderr.log"
+  ],
+  "missing": [
+    {
+      "source": "/private/tmp/mesh-exec-participation-20261020/runtime/runs/7027ca64-f521-4476-ad5d-4ae12215bddb/A1/e473c9d6-5d7e-4d7b-b69e-45bb38478742/result.json",
+      "reason": "not present"
+    },
+    {
+      "source": "/private/tmp/mesh-exec-participation-20261020/runtime/runs/7027ca64-f521-4476-ad5d-4ae12215bddb/A3/a35af0d2-9e18-4578-9329-973fd1875296/result.json",
+      "reason": "not present"
+    },
+    {
+      "source": "/private/tmp/mesh-exec-participation-20261020/runtime/runs/7027ca64-f521-4476-ad5d-4ae12215bddb/A2/1f13fbfa-9f6a-48b1-bae6-c6060ba10661/result.json",
+      "reason": "not present"
+    },
+    {
+      "source": "/private/tmp/mesh-exec-participation-20261020/runtime/runs/7027ca64-f521-4476-ad5d-4ae12215bddb/A4/09dce569-dc67-42c0-a4ed-9d96b67db062/result.json",
+      "reason": "not present"
+    },
+    {
+      "source": "/private/tmp/mesh-exec-participation-20261020/runtime/runs/7027ca64-f521-4476-ad5d-4ae12215bddb/A5/0013bc0a-32ac-4af7-b3a6-598fd46984d3/result.json",
+      "reason": "not present"
+    }
+  ],
+  "redaction": "Bearer tokens, known run credentials, API-key patterns, and credential fields redacted; application text is retained."
+}

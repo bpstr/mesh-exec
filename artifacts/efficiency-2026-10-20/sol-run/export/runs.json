@@ -1,0 +1,92 @@
+[
+  {
+    "id": "ad4fa85e-d3a6-44e3-a317-95f66daa6ef1",
+    "agent_id": "A1",
+    "generation": 1,
+    "state": "exited",
+    "started_at": "2026-10-20T18:46:24.698Z",
+    "ended_at": "2026-10-20T18:48:51.812Z",
+    "reason": "exited",
+    "handoff": null,
+    "result": {
+      "outcome": "completion_proposed",
+      "summary": "Mission accepted and completed. All four deliverables implemented; independent reviews passed; final acceptance passed 12/12 tests.",
+      "waiting_on": [],
+      "checkpoint_id": "d0475248-a455-46a9-bd0a-46a6d5bdf1ae",
+      "work_revision": "39"
+    },
+    "log_dir": "/private/tmp/mesh-exec-efficiency-20261020/runtime/runs/ceeedb33-848d-4129-a921-6bc37295349f/A1/ad4fa85e-d3a6-44e3-a317-95f66daa6ef1"
+  },
+  {
+    "id": "3fc50197-4a1e-4b53-b212-668b747f179a",
+    "agent_id": "A5",
+    "generation": 1,
+    "state": "exited",
+    "started_at": "2026-10-20T18:46:24.822Z",
+    "ended_at": "2026-10-20T18:48:48.213Z",
+    "reason": "exited",
+    "handoff": null,
+    "result": {
+      "outcome": "completion_proposed",
+      "summary": "Mission accepted and completed. A5 independently passed requirement and roadmap coverage reviews; all 12 tests passed.",
+      "waiting_on": [],
+      "checkpoint_id": "a10c7ba8-122e-4e73-aee9-b56c9f99d53d",
+      "work_revision": "39"
+    },
+    "log_dir": "/private/tmp/mesh-exec-efficiency-20261020/runtime/runs/ceeedb33-848d-4129-a921-6bc37295349f/A5/3fc50197-4a1e-4b53-b212-668b747f179a"
+  },
+  {
+    "id": "e7780704-c2cf-453a-8b49-4de2e0bce05a",
+    "agent_id": "A4",
+    "generation": 1,
+    "state": "exited",
+    "started_at": "2026-10-20T18:46:24.824Z",
+    "ended_at": "2026-10-20T18:48:46.974Z",
+    "reason": "exited",
+    "handoff": null,
+    "result": {
+      "outcome": "completion_proposed",
+      "summary": "Mission accepted and completed. Added README documentation; all 12 tests and independent reviews passed.",
+      "waiting_on": [],
+      "checkpoint_id": "1da46a0f-f653-4cad-b791-67d2909a7bfb",
+      "work_revision": "39"
+    },
+    "log_dir": "/private/tmp/mesh-exec-efficiency-20261020/runtime/runs/ceeedb33-848d-4129-a921-6bc37295349f/A4/e7780704-c2cf-453a-8b49-4de2e0bce05a"
+  },
+  {
+    "id": "0aa7aca8-4246-4d59-a025-028062c7c45d",
+    "agent_id": "A2",
+    "generation": 1,
+    "state": "exited",
+    "started_at": "2026-10-20T18:46:24.824Z",
+    "ended_at": "2026-10-20T18:48:47.100Z",
+    "reason": "exited",
+    "handoff": null,
+    "result": {
+      "outcome": "completion_proposed",
+      "summary": "Mission accepted and completed. Implemented CLI; all 12 tests and independent reviews passed.",
+      "waiting_on": [],
+      "checkpoint_id": "36327d36-16cc-462d-82de-01244bf7958d",
+      "work_revision": "39"
+    },
+    "log_dir": "/private/tmp/mesh-exec-efficiency-20261020/runtime/runs/ceeedb33-848d-4129-a921-6bc37295349f/A2/0aa7aca8-4246-4d59-a025-028062c7c45d"
+  },
+  {
+    "id": "11196895-b381-4c2a-b79a-2f8ddeec5b59",
+    "agent_id": "A3",
+    "generation": 1,
+    "state": "exited",
+    "started_at": "2026-10-20T18:46:24.824Z",
+    "ended_at": "2026-10-20T18:48:49.068Z",
+    "reason": "exited",
+    "handoff": null,
+    "result": {
+      "outcome": "completion_proposed",
+      "summary": "Mission accepted and completed. A3 added automated tests; all 12 passed. Final checkpoint recorded.",
+      "waiting_on": [],
+      "checkpoint_id": "8b4f1b57-bb7d-4d65-b987-482f9a3ebcd1",
+      "work_revision": "39"
+    },
+    "log_dir": "/private/tmp/mesh-exec-efficiency-20261020/runtime/runs/ceeedb33-848d-4129-a921-6bc37295349f/A3/11196895-b381-4c2a-b79a-2f8ddeec5b59"
+  }
+]

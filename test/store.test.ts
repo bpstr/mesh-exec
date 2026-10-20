@@ -61,6 +61,106 @@ async function setup() {
   return { db, store, mission, a, b, epoch };
 }
 
+test('knowledge pages retain old resolved findings and paginate timestamp ties without loss', async (t) => {
+  const s = await setup();
+  t.after(() => s.db.close());
+  for (let i = 0; i < 53; i++) {
+    await s.store.remember(s.a.principal, {
+      id: `finding-${String(i).padStart(2, '0')}`,
+      kind: 'finding',
+      title: i === 0 ? 'Historical solution' : 'Current finding',
+      body: 'Evidence retained for every agent.',
+      status: i === 0 ? 'resolved' : 'open',
+    });
+  }
+  // Preserve sub-millisecond precision in cursors and break ties by ID.
+  await s.db.query(
+    "UPDATE knowledge SET updated_at='2026-01-01 00:00:00.123456+00' WHERE mission_id=$1",
+    [s.mission.id],
+  );
+  const first = (await s.store.board(s.b.principal)) as any;
+  assert.equal(first.knowledge.length, 50);
+  assert.equal(first.knowledgePage.hasMore, true);
+  assert.deepEqual(first.knowledgePage.summary, {
+    total: 53,
+    findings: 53,
+    decisions: 0,
+    offers: 0,
+    blockers: 0,
+    resolved: 1,
+    stale: 0,
+  });
+  const second = (await s.store.board(s.b.principal, undefined, {
+    knowledgeCursor: first.knowledgePage.nextCursor,
+  })) as any;
+  assert.equal(second.knowledge.length, 3);
+  assert.equal(second.knowledgePage.hasMore, false);
+  assert.equal(second.knowledgePage.nextCursor, null);
+  const entries = [...first.knowledge, ...second.knowledge];
+  assert.equal(new Set(entries.map((entry) => entry.id)).size, 53);
+  assert.equal(entries.at(-1).status, 'resolved');
+  assert.equal(entries.at(-1).id, 'finding-00');
+  const search = (await s.store.board(s.b.principal, 'Historical', { knowledgeLimit: 1 })) as any;
+  assert.equal(search.knowledgePage.summary.total, 1);
+  assert.equal(search.knowledge[0].id, 'finding-00');
+  assert.equal(search.knowledgePage.hasMore, false);
+  const empty = (await s.store.board(s.b.principal, 'nonexistent')) as any;
+  assert.equal(empty.knowledgePage.summary.total, 0);
+  assert.equal(empty.knowledgePage.nextCursor, null);
+  await assert.rejects(
+    s.store.board(s.b.principal, undefined, { knowledgeLimit: 0 }),
+    /knowledgeLimit/,
+  );
+});
+
+test('identical requirement publication preserves revision, author, reviews, and work revision', async (t) => {
+  const s = await setup();
+  t.after(() => s.db.close());
+  const requirement = {
+    id: 'R1',
+    anchor: 'Implement a shared counter.',
+    title: 'Counter',
+    criteria: ['Starts at zero'],
+    state: 'implemented' as const,
+    evidence: [{ criterion: 0, description: 'Inspected source' }],
+  };
+  await s.store.requirement(s.a.principal, requirement);
+  await s.store.review(s.b.principal, {
+    id: 'review',
+    kind: 'requirement',
+    targetId: 'R1',
+    targetRevision: 1,
+    manifestHash: 'a'.repeat(64),
+    verdict: 'pass',
+    reasoning: 'Inspected implementation',
+  });
+  const before = await s.store.observe(s.mission.id);
+  assert.deepEqual(
+    await s.store.requirement(s.b.principal, { ...requirement, expectedRevision: 1 }),
+    { id: 'R1', revision: 1, unchanged: true },
+  );
+  assert.deepEqual(await s.store.observe(s.mission.id), before);
+  const stored = await s.db.query('SELECT author_agent,revision FROM requirements WHERE id=$1', [
+    'R1',
+  ]);
+  assert.equal(stored.rows[0].author_agent, s.a.principal.agentId);
+  assert.equal(stored.rows[0].revision, 1);
+  assert.equal((await s.db.query('SELECT id FROM reviews WHERE target_revision=1')).rowCount, 1);
+  await assert.rejects(
+    s.store.requirement(s.b.principal, { ...requirement, expectedRevision: 2 }),
+    /current requirement revision/,
+  );
+  assert.deepEqual(
+    await s.store.requirement(s.a.principal, {
+      ...requirement,
+      expectedRevision: 1,
+      criteria: ['Starts at one'],
+    }),
+    { id: 'R1', revision: 2 },
+  );
+  assert.notEqual((await s.store.observe(s.mission.id)).workRevision, before.workRevision);
+});
+
 test('atomic overlapping claim bundles have one winner; stale generations cannot write', async (t) => {
   const s = await setup();
   t.after(() => s.db.close());

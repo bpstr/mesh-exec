@@ -1,0 +1,47 @@
+{
+  "passed": true,
+  "checks": {
+    "three_normal_first_generation_handoffs": true,
+    "one_request_sent_and_answered_per_peer": true,
+    "six_deliveries_all_handled": true,
+    "one_checkpoint_per_peer": true,
+    "no_tool_failures": true,
+    "efficiency_target_at_most_30_mesh_calls": true,
+    "three_terminal_usage_receipts": true,
+    "source_unchanged": true,
+    "no_missing_export_artifacts": true
+  },
+  "toolCalls": {
+    "mesh_join": 3,
+    "mesh_send": 6,
+    "mesh_poll": 6,
+    "mesh_reply": 3,
+    "mesh_ack": 3,
+    "mesh_checkpoint": 3,
+    "mesh_yield": 3
+  },
+  "totalToolCalls": 27,
+  "usage": {
+    "input_tokens": 709520,
+    "output_tokens": 4465,
+    "cached_input_tokens": 638208,
+    "reasoning_output_tokens": 803,
+    "cache_write_input_tokens": 0
+  },
+  "partialUsage": {
+    "input_tokens": 709520,
+    "output_tokens": 4465,
+    "cached_input_tokens": 638208,
+    "reasoning_output_tokens": 803,
+    "cache_write_input_tokens": 0
+  },
+  "receiptCount": 3,
+  "failures": [],
+  "sourceHashes": {
+    "ROADMAP.md": "751e23fc9f3003629d89b4656b9c25ac9b2691acade30df09ca19a200224c12a"
+  },
+  "missionState": "resource-limit",
+  "scope": "Communication exercise acceptance only; not implementation-mission acceptance.",
+  "totalReportedTokens": 713985,
+  "uncachedInputTokens": 71312
+}

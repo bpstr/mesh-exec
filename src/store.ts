@@ -65,6 +65,11 @@ export function normalizeResource(input: string): string {
     );
     return input;
   }
+  invariant(
+    !input.startsWith('file:'),
+    'INVALID_RESOURCE',
+    'File claims use repository-relative paths without a file: prefix; use resource:name only for coordination.',
+  );
   if (input === '.' || input === './**') return '.';
   invariant(
     !input.startsWith('/') && !input.split('/').some((p) => p === '..'),
@@ -202,7 +207,12 @@ export class Store {
     });
     return this.mission(id);
   }
-  async assertActive(p: Principal, tx: Sql = this.db, allowClosing = false): Promise<void> {
+  async assertActive(
+    p: Principal,
+    tx: Sql = this.db,
+    allowClosing = false,
+    allowCompleted = false,
+  ): Promise<void> {
     const r = await tx.query(
       `SELECT r.id FROM runs r JOIN slots s ON s.mission_id=r.mission_id AND s.id=r.agent_id JOIN missions m ON m.id=r.mission_id
       WHERE r.id=$1 AND r.mission_id=$2 AND r.agent_id=$3 AND r.generation=$4 AND s.generation=r.generation AND s.active_run_id=r.id
@@ -213,7 +223,7 @@ export class Store {
         p.missionId,
         p.agentId,
         p.generation,
-        allowClosing ? ['active', 'closing'] : ['active'],
+        ['active', ...(allowClosing ? ['closing'] : []), ...(allowCompleted ? ['completed'] : [])],
       ],
     );
     invariant(
@@ -222,7 +232,7 @@ export class Store {
       'Run is finished, expired, fenced, or mission admission is closed',
     );
   }
-  async authenticate(token: string): Promise<Principal> {
+  async authenticate(token: string, allowCompleted = false): Promise<Principal> {
     invariant(
       token.length >= 32 && token.length <= 1024,
       'UNAUTHORIZED',
@@ -242,7 +252,7 @@ export class Store {
       runId: row.id,
       generation: row.generation,
     };
-    await this.assertActive(p, this.db, true);
+    await this.assertActive(p, this.db, true, allowCompleted);
     return p;
   }
   async acquireSupervisor(input: {
@@ -650,10 +660,20 @@ export class Store {
       invariant(r.rowCount, 'STALE_DEPENDENCY', `Decision ${id} changed or became stale`);
     }
   }
-  async board(p: Principal, query?: string): Promise<unknown> {
+  async board(
+    p: Principal,
+    query?: string,
+    page: { knowledgeLimit?: number; knowledgeCursor?: { updatedAt: string; id: string } } = {},
+  ): Promise<unknown> {
     await this.assertActive(p, this.db, true);
+    const limit = page.knowledgeLimit ?? 50;
+    invariant(
+      Number.isInteger(limit) && limit >= 1 && limit <= 100,
+      'INVALID_LIMIT',
+      'knowledgeLimit must be between 1 and 100',
+    );
     const m = await this.mission(p.missionId);
-    const [requirements, intentions, claims, knowledge, peers] = await Promise.all([
+    const [requirements, intentions, claims, knowledge, peers, summary] = await Promise.all([
       this.db.query('SELECT * FROM requirements WHERE mission_id=$1 ORDER BY id LIMIT 200', [
         p.missionId,
       ]),
@@ -664,20 +684,39 @@ export class Store {
         "SELECT * FROM claims WHERE mission_id=$1 AND state IN ('held','quarantined') LIMIT 200",
         [p.missionId],
       ),
-      query
-        ? this.db.query(
-            `SELECT * FROM knowledge WHERE mission_id=$1 AND to_tsvector('english',title||' '||body) @@ plainto_tsquery('english',$2) ORDER BY updated_at DESC LIMIT 50`,
-            [p.missionId, query],
-          )
-        : this.db.query(
-            'SELECT * FROM knowledge WHERE mission_id=$1 ORDER BY updated_at DESC LIMIT 50',
-            [p.missionId],
-          ),
+      this.db.query(
+        `SELECT *, updated_at::text AS cursor_time FROM knowledge WHERE mission_id=$1
+         AND ($2::text IS NULL OR to_tsvector('english',title||' '||body) @@ plainto_tsquery('english',$2))
+         AND ($3::timestamptz IS NULL OR (updated_at,id) < ($3::timestamptz,$4::text))
+         ORDER BY updated_at DESC,id DESC LIMIT $5`,
+        [
+          p.missionId,
+          query || null,
+          page.knowledgeCursor?.updatedAt ?? null,
+          page.knowledgeCursor?.id ?? null,
+          limit + 1,
+        ],
+      ),
       this.db.query(
         'SELECT id,generation,state,handoff FROM slots WHERE mission_id=$1 ORDER BY id',
         [p.missionId],
       ),
+      this.db.query(
+        `SELECT count(*) AS total,
+         count(*) FILTER (WHERE kind='finding') AS findings,
+         count(*) FILTER (WHERE kind='decision') AS decisions,
+         count(*) FILTER (WHERE kind='offer') AS offers,
+         count(*) FILTER (WHERE kind='blocker') AS blockers,
+         count(*) FILTER (WHERE status='resolved') AS resolved,
+         count(*) FILTER (WHERE freshness='stale') AS stale
+         FROM knowledge WHERE mission_id=$1
+         AND ($2::text IS NULL OR to_tsvector('english',title||' '||body) @@ plainto_tsquery('english',$2))`,
+        [p.missionId, query || null],
+      ),
     ]);
+    const entries = knowledge.rows.slice(0, limit);
+    const hasMore = knowledge.rows.length > limit;
+    const last = entries.at(-1);
     await this.observed(p, String(m.revision));
     return {
       mission: {
@@ -690,7 +729,15 @@ export class Store {
       requirements: requirements.rows,
       intentions: intentions.rows,
       claims: claims.rows,
-      knowledge: knowledge.rows,
+      knowledge: entries.map(({ cursor_time, ...entry }) => entry),
+      knowledgePage: {
+        limit,
+        hasMore,
+        nextCursor: hasMore && last ? { updatedAt: last.cursor_time, id: last.id } : null,
+        summary: Object.fromEntries(
+          Object.entries(summary.rows[0]).map(([key, value]) => [key, Number(value)]),
+        ),
+      },
       peers: peers.rows,
     };
   }
@@ -703,7 +750,8 @@ export class Store {
   async checkpoint(p: Principal, body: unknown, id = randomUUID()): Promise<{ id: string }> {
     await this.db.transaction(async (tx) => {
       await this.lock(tx, p.missionId);
-      await this.assertActive(p, tx);
+      // Final audit metadata may be saved during the bounded completion drain.
+      await this.assertActive(p, tx, false, true);
       const prior = await tx.query<{ body: unknown; run_id: string }>(
         'SELECT body,run_id FROM checkpoints WHERE id=$1',
         [id],
@@ -726,6 +774,7 @@ export class Store {
         p.agentId,
         JSON.stringify(body),
       ]);
+      await this.changed(tx, p.missionId);
       await this.events({ ...p, kind: 'checkpoint.recorded', data: { id, body } }, tx);
     });
     return { id };
@@ -913,8 +962,15 @@ export class Store {
         'Requirement anchor must appear in the original roadmap',
       );
       invariant(input.criteria.length > 0, 'NO_CRITERIA', 'Acceptance criteria are required');
-      const old = await tx.query<{ revision: number }>(
-        'SELECT revision FROM requirements WHERE mission_id=$1 AND id=$2',
+      const old = await tx.query<{
+        revision: number;
+        anchor: string;
+        title: string;
+        criteria: string[];
+        state: string;
+        evidence: unknown[];
+      }>(
+        'SELECT revision,anchor,title,criteria,state,evidence FROM requirements WHERE mission_id=$1 AND id=$2',
         [p.missionId, input.id],
       );
       invariant(
@@ -928,6 +984,25 @@ export class Store {
         'EVIDENCE_REQUIRED',
         'Implementation needs evidence',
       );
+      const previous = old.rows[0];
+      if (
+        previous &&
+        canonicalJson({
+          anchor: input.anchor,
+          title: input.title,
+          criteria: input.criteria,
+          state: input.state ?? 'open',
+          evidence: input.evidence ?? [],
+        }) ===
+          canonicalJson({
+            anchor: previous.anchor,
+            title: previous.title,
+            criteria: previous.criteria,
+            state: previous.state,
+            evidence: previous.evidence,
+          })
+      )
+        return { id: input.id, revision: previous.revision, unchanged: true };
       await tx.query(
         `INSERT INTO requirements(mission_id,id,revision,anchor,title,criteria,state,author_agent,evidence) VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9::jsonb)
         ON CONFLICT(mission_id,id) DO UPDATE SET revision=$3,anchor=$4,title=$5,criteria=$6::jsonb,state=$7,author_agent=$8,evidence=$9::jsonb,updated_at=now()`,

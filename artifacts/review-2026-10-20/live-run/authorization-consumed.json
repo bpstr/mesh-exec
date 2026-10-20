@@ -1,0 +1,13 @@
+{
+  "model": "gpt-5.6-terra",
+  "agents": 5,
+  "maxLaunches": 5,
+  "maxElapsedMs": 300000,
+  "replacements": false,
+  "retries": false,
+  "stop": "completion, first provider error, or five-minute cutoff",
+  "authorization": "User explicitly approved live Terra via Codex, five launches, five-minute cutoff.",
+  "startedAt": "2026-10-20T16:37:00.224Z",
+  "runnerCommit": "7de06272af9813f396bc2cd36907f12ca02ec6ec",
+  "codexVersion": "codex-cli 0.160.0"
+}

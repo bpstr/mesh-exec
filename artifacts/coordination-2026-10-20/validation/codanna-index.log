@@ -1,0 +1,22 @@
+Initializing project configuration...
+Created default configuration at: .codanna/settings.toml
+Created default .codannaignore file
+Using existing global directory: /Users/bpstr/.codanna
+Using existing models directory: /Users/bpstr/.codanna/models
+Created symlink: .fastembed_cache -> /Users/bpstr/.codanna/models
+Project registered with ID: 37a353d33f11784fa9f5d71611fbaaa2
+Created configuration file at: .codanna/settings.toml
+18:58:13.823  WARN semantic: memory-aware embedding pool: requested 3, using 2 (available=2386 MiB, adaptive headroom=850 MiB)
+Semantic search enabled (model: AllMiniLML6V2, threshold: 0.6)
+Added 1 path(s) to settings.toml
+
+ ⠋ Preparing: 136 files, parsing...
+EMBED: [▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮] 100%  31/31 embedded | 58/s
+INDEX: [▮▮▮▮▮               ]  24%  33/136 files | 61/s | 0.5s
+LINKS: [                            ]   0%
+0/3395 relationships | 0.0s
+LINKS: [▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮▮] 100%
+3395/3395 relationships | 1418 resolved | 1977 skipped | 0.6s
+
+Saving index with 968 total symbols, 1418 total relationships...
+Index saved to: .codanna/index

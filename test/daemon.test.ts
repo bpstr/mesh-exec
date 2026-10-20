@@ -221,6 +221,38 @@ test('independent MCP peers consult over A2A, publish in one checkout, and compl
     /Should zero be represented/,
   );
   assert.match(await readFile(join(exportDir, 'messages.json'), 'utf8'), /starts at zero/);
+  const operatorHeaders = { Authorization: `Bearer ${f.daemon.operatorToken}` };
+  const forbidden = await fetch(f.daemon.url + '/observer/runs', {
+    headers: { Authorization: `Bearer ${f.a.token}` },
+  });
+  assert.equal(forbidden.status, 401);
+  const inspected = await fetch(f.daemon.url + '/observer/runs', { headers: operatorHeaders });
+  assert.equal(inspected.status, 200);
+  assert.equal(((await inspected.json()) as any).runs.length, 2);
+  const invalidCursor = await fetch(f.daemon.url + '/observer/events/stream?after=invalid', {
+    headers: operatorHeaders,
+  });
+  assert.equal(invalidCursor.status, 400);
+  const cutoff = events.at(-1)!.seq;
+  const initialEvents = events.filter((e) => e.kind.startsWith('message.'));
+  const streamUrl = `${f.daemon.url}/observer/events/stream?kindPrefix=message.&until=${cutoff}&limit=2`;
+  const streamed = await fetch(streamUrl, { headers: operatorHeaders });
+  assert.match(streamed.headers.get('content-type')!, /text\/event-stream/);
+  const body = await streamed.text();
+  assert.ok(body.includes('Should zero be represented'));
+  const ids = [...body.matchAll(/^id: (\d+)$/gm)].map((m) => m[1]);
+  assert.deepEqual(
+    ids,
+    initialEvents.map((e) => e.seq),
+  );
+  const replay = await fetch(streamUrl, {
+    headers: { ...operatorHeaders, 'Last-Event-ID': initialEvents[0].seq },
+  });
+  const replayIds = [...(await replay.text()).matchAll(/^id: (\d+)$/gm)].map((m) => m[1]);
+  assert.deepEqual(
+    replayIds,
+    initialEvents.slice(1).map((e) => e.seq),
+  );
 });
 
 test('completion refuses stale coverage, unhandled replies, and a changing validation source', async (t) => {

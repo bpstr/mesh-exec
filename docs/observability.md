@@ -2,7 +2,7 @@
 
 The mesh records what agents send, receive, publish, run, and acknowledge. Full internal A2A text and structured parts are durable data, not just metrics or short summaries. Complete Codex and command stdout/stderr streams are retained in runtime files, while PostgreSQL stores lifecycle events and indexes into those files.
 
-The implementation is in [trace.ts](../src/trace.ts), [observer.ts](../src/observer.ts), [runner.ts](../src/runner.ts), and [a2a.ts](../src/a2a.ts). This is an observable execution record. It does not expose hidden model reasoning or content that the Codex CLI never emitted.
+The implementation is in [trace.ts](../src/trace.ts), [observer.ts](../src/observer.ts), [conversations.ts](../src/conversations.ts), [artifacts.ts](../src/artifacts.ts), [runner.ts](../src/runner.ts), and [a2a.ts](../src/a2a.ts). This is an observable execution record. It does not expose hidden model reasoning or content that the Codex CLI never emitted.
 
 ## Start with mission status
 
@@ -47,6 +47,26 @@ An internal exchange has several distinct events:
 
 Retries are visible as `message.delivery.retry_scheduled`; permanent rejection is `message.delivery.rejected`. A replay of accepted ingress produces `message.ingress.replayed` with the original result. This is how to distinguish two HTTP attempts from two logical questions.
 
+### Inspect outgoing intents and the conversation timeline
+
+```bash
+mesh messages --mission MISSION_ID --all
+mesh messages --mission MISSION_ID --all --agent A1
+mesh messages --mission MISSION_ID --all --outbox OUTBOX_ID
+mesh conversation --mission MISSION_ID --task TASK_ID
+mesh conversation --mission MISSION_ID --message MESSAGE_ID
+```
+
+The delivered-mailbox view remains useful for pending work. The `--all` view also includes outgoing intents that are queued, retrying, or rejected before an inbox delivery exists. Each entry retains the full outgoing envelope and accepted payload when available, sender/run provenance, attempts, exposure and acknowledgement summaries, task state, and measured lifecycle timings. Transport and mailbox state are reported independently; a received answer can still be unhandled.
+
+`conversation` returns the linked event timeline in durable sequence order, including transport attempts, mailbox events, and related replies. It connects evidence across replacement runs. Message IDs are scoped by mission, sender, and recipient; use an outbox ID to select one outgoing intent unambiguously when multiple peers reuse the same message ID.
+
+Both commands return `nextCursor`, `snapshotSeq`, and `observedAt`. Pass a non-null cursor back with the same selectors using `--cursor` to retrieve the next page. Cursors belong to their command and query; start a fresh query to observe new messages after the captured boundary. Payloads are retained in full within each returned record, while page sizes bound the number of records.
+
+Message enumeration and event history are fenced at `snapshotSeq`; current lifecycle fields and state-filter membership can advance between page requests. Use an export for a transactionally consistent database snapshot. Message pages default to 50 records and allow up to 200; timeline pages default to 100 and allow up to 1000. Nested attempt, exposure, and acknowledgement histories include their latest 20 records with `total` and `truncated`; the timeline and export retain the complete history.
+
+`messages --all --state` accepts `queued`, `sending`, `retrying`, `delivery-rejected`, `accepted`, `received`, `offered`, `deferred`, `handled`, `rejected`, or `superseded`. For example, `mesh messages --mission MISSION_ID --all --state retrying` isolates outgoing messages whose transport has not succeeded. Timing fields use recorded wall-clock timestamps and report negative intervals explicitly if a clock adjustment produces one; they do not measure model understanding.
+
 ## Filter the durable trace
 
 ```bash
@@ -56,11 +76,15 @@ mesh trace --mission MISSION_ID --task TASK_ID
 mesh trace --mission MISSION_ID --message MESSAGE_ID
 mesh trace --mission MISSION_ID --operation OPERATION_ID
 mesh trace --mission MISSION_ID --correlation CORRELATION_ID
+mesh trace --mission MISSION_ID --trace-id TRACE_ID
+mesh trace --mission MISSION_ID --span-id SPAN_ID
+mesh trace --mission MISSION_ID --kind-prefix message. --follow
 mesh trace --mission MISSION_ID --kind message.ingress.accepted
 mesh trace --mission MISSION_ID --after 1000 --limit 500
+mesh trace --mission MISSION_ID --after 128 --until 256
 ```
 
-Filters combine with AND. `--after` is an exclusive event-sequence cursor, not a timestamp. A non-following invocation returns one bounded batch; `--follow` advances the cursor through subsequent batches and waits for new events. Interrupt following with `Ctrl-C`.
+Filters combine with AND. `--after` is an exclusive event-sequence cursor, not a timestamp; `--until` is an inclusive upper boundary. `--kind-prefix` matches a literal event-kind prefix. A non-following invocation returns one bounded batch; `--follow` advances the cursor through subsequent batches and waits for new events. With `--until`, following ends after the bounded history has been drained. Interrupt following with `Ctrl-C`. Output respects consumer backpressure when piping a large trace to another process.
 
 Every event includes a mission, unique event ID, sequence, time, kind, and JSON data. Applicable events additionally include:
 
@@ -87,6 +111,19 @@ The durable trace includes MCP tool arguments/results, A2A wire requests/respons
 
 Known run/operator credentials, bearer credentials, credential-named fields, and recognized API-key/database-credential patterns are redacted. Message bodies otherwise remain available. Redaction is deliberate filtering, not a claim that every application-specific secret can be recognized automatically. Treat the database, logs, and exports as private project artifacts.
 
+## Run history and capture completeness
+
+```bash
+mesh runs --mission MISSION_ID --agent A1
+mesh runs --mission MISSION_ID --run RUN_ID
+```
+
+Run history exposes generations, lifecycle timestamps, handoffs/results, event counts, and artifact locations without credential hashes. It is newest first, with `nextCursor` for the next page. Cursor keys retain PostgreSQL timestamp precision and an ID tie-breaker. Selecting a particular run also reads its protected `capture.json`; a missing manifest is explicit rather than being interpreted as an empty successful capture.
+
+Each finalized manifest has `schemaVersion: 1` and separates the prompt, result schema, stdout, stderr, final handoff, and stdin transmission. Artifact metadata includes byte and line counts, SHA-256, synchronization status, and stage-specific failures. Output streams additionally record source bytes, EOF, indexed-event counts, and index completeness. The final handoff is reported as valid, invalid, or missing. A run may fail its coding task while its emitted output is completely captured; an indexing failure may leave full output files with an incomplete event index.
+
+`run.prompt`, `run.handoff`, and `run.capture.completed` / `run.capture.incomplete` make those artifacts discoverable through the durable trace. The native handoff is archived during cleanup after process quiescence, including failure paths. Stdin completion records pipe transmission; it does not prove that a model understood the prompt. Native thread and turn identifiers, when emitted by Codex, remain associated with subsequent item events.
+
 ## Complete stdout and stderr
 
 ```bash
@@ -94,9 +131,10 @@ mesh logs --mission MISSION_ID --run RUN_ID
 mesh logs --mission MISSION_ID --run RUN_ID --stream stderr --follow
 mesh logs --mission MISSION_ID --operation OPERATION_ID
 mesh logs --mission MISSION_ID --operation OPERATION_ID --stream stderr
+mesh logs --mission MISSION_ID --run RUN_ID --offset 65536
 ```
 
-The default stream is stdout. Codex stdout is stored as `stdout.jsonl`; stderr is `stderr.log`. Daemon-managed command logs are separate stdout/stderr files. These commands stream the complete retained file from its beginning, with `--follow` continuing to read appended bytes. They require the original log files to remain present, even if the PostgreSQL records still exist. An operation log becomes discoverable through its result metadata when that metadata is available; use the live trace for an operation still starting.
+The default stream is stdout. Codex stdout is stored as `stdout.jsonl`; stderr is `stderr.log`. Daemon-managed command logs are separate stdout/stderr files. These commands stream the complete retained file from its beginning, with `--follow` continuing to read appended bytes and `--offset` resuming at an exact byte position. Output remains byte-oriented across UTF-8 boundaries and respects slow consumers. A non-following replay stops at the file size observed when it opened. They require the original log files to remain present, even if the PostgreSQL records still exist. Command logs can also be discovered from the durable operation journal while an operation is active or interrupted.
 
 Run logs live under the private runtime directory, outside the shared source checkout. The worker receives its own writable `worker` directory for generated run files, while the parent retains the audit copy of the prompt and captured logs outside every worker-writable mount. Command stdout/stderr similarly live beside, rather than inside, the command's writable output directory. Workers cannot edit the parent's captured history through the supported execution boundary.
 
@@ -108,23 +146,31 @@ Choose a new destination directory:
 
 ```bash
 mesh export --mission MISSION_ID --out ./mission-export
+mesh verify-export ./mission-export
 ```
 
 The directory contains:
 
-| File/directory    | Contents                                                                                                  |
-| ----------------- | --------------------------------------------------------------------------------------------------------- |
-| `mission.json`    | Mission status snapshot and acceptance, when present                                                      |
-| `events.jsonl`    | The complete durable event history, exported in pages                                                     |
-| `runs.json`       | Run identities, state, results, and artifact references                                                   |
-| `operations.json` | Workspace operation requests, state, results, and errors                                                  |
-| `tasks.json`      | A2A tasks and their durable state/history                                                                 |
-| `messages.json`   | Durable mailbox deliveries and full message content                                                       |
-| `runs/`           | Available captured run logs, prompt, handoff, and other recognized run artifacts                          |
-| `operations/`     | Available command stdout/stderr logs                                                                      |
-| `export.json`     | Export time, event count, included artifact paths, redaction description, and a `missing` artifact report |
+| File/directory                 | Contents                                                                                                  |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| `mission.json`                 | Mission status snapshot and acceptance, when present                                                      |
+| `events.jsonl`                 | The complete durable event history, exported in pages                                                     |
+| `runs.json`                    | Run identities, state, results, and artifact references                                                   |
+| `operations.json`              | Workspace operation requests, state, results, and errors                                                  |
+| `tasks.json`                   | A2A tasks and their durable state/history                                                                 |
+| `messages.json`                | Durable mailbox deliveries and full message content                                                       |
+| `a2a-messages.json`            | Accepted message records with payload and sender provenance                                               |
+| `outbox.json`, `attempts.json` | Full outgoing intents and individual transmission attempts                                                |
+| `exposures.json`               | Which run was offered each mailbox delivery                                                               |
+| `runs/`                        | Available captured run logs, prompt, handoff, and other recognized run artifacts                          |
+| `operations/`                  | Available command stdout/stderr logs                                                                      |
+| `export.json`                  | Export time, event count, included artifact paths, redaction description, and a `missing` artifact report |
 
-An export does not silently assert that every referenced runtime file survived. Inspect `export.json.missing` for expected artifacts that were absent or could not be copied. It is an investigation bundle, not a replacement for a PostgreSQL backup or a source checkout backup. Export after the mission stops for a stable investigation snapshot; an export during activity can include records from different moments as the mission continues.
+An export does not silently assert that every referenced runtime file survived. Inspect `export.json` for missing or partial artifacts. Database records use a read-only repeatable-read snapshot, and `upperEventSeq` fixes the inclusive trace boundary. Streaming copies then read only each artifact's initial byte length, so active output cannot extend an export indefinitely. File copies occur after the database snapshot; the manifest identifies captures that are still incomplete or whose finality cannot be established. Export after a mission stops for the most complete investigation bundle.
+
+The versioned manifest records archive paths, original source paths, byte counts, SHA-256 hashes, and whether original trace offsets still match the exported file. Reapplying credential filtering can change byte positions; an artifact with `offsetsPreserved: false` must be read as the exported content, not addressed using its source file's offsets. JSON table arrays and artifact files are written incrementally instead of loading an entire large mission or log into memory.
+
+`verify-export` works without a database or running daemon. It checks the recorded file hashes and sizes and reports missing files, mismatches, unsafe paths, errors, and declared partial captures. Verification establishes archive integrity relative to its manifest; capture completeness is a separate reported property. The bundle does not replace a PostgreSQL backup or source checkout backup.
 
 For a trace-only JSONL export, optionally filtered:
 
@@ -155,7 +201,20 @@ The output is Prometheus-compatible text with these metric families:
 
 Metric labels contain identifiers/state, not message bodies or credentials. Metrics summarize the trace; they do not establish that a question was understood or a roadmap was fulfilled.
 
-While the daemon runs, it also exposes `/observer/status`, `/observer/events`, `/observer/messages`, and `/metrics` over loopback HTTP. These require the separate operator bearer credential recorded in the private `daemon.json`; agent run tokens do not authorize operator observation. `/health` reports readiness. The HTTP server accepts direct local clients and rejects browser-origin requests. The CLI observation commands use the database connection instead of this operator HTTP credential.
+While the daemon runs, it also exposes `/observer/status`, `/observer/runs`, `/observer/events`, `/observer/messages`, `/observer/conversations/messages`, `/observer/conversations/events`, and `/metrics` over loopback HTTP. These require the separate operator bearer credential recorded in the private `daemon.json`; agent run tokens do not authorize operator observation. `/health` reports readiness. The HTTP server accepts direct local clients and rejects browser-origin requests. The CLI observation commands use the database connection instead of this operator HTTP credential.
+
+### Resumable live event feed
+
+`GET /observer/events/stream` is an authenticated SSE feed of the durable trace. It accepts the event filters above using query names such as `traceId`, `spanId`, `kindPrefix`, `after`, and `until`. Each `mesh.trace` event has an SSE ID equal to its mission-local event sequence. Resume a connection with `Last-Event-ID`; an explicit `after` query takes precedence. Heartbeats keep idle connections active, and slow clients apply backpressure. Query errors return HTTP 400 before streaming begins; a later read failure is emitted as `mesh.error` before the stream ends.
+
+```bash
+curl -N \
+  -H "Authorization: Bearer $MESH_OPERATOR_TOKEN" \
+  -H 'Last-Event-ID: 128' \
+  'http://127.0.0.1:7331/observer/events/stream?kindPrefix=message.'
+```
+
+Use the operator credential from the private daemon metadata. Observing or replaying this feed does not acknowledge mailbox deliveries or change coordination state.
 
 ## Useful investigations
 

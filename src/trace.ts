@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { Database, EventSink, Principal, Sql, TraceEvent, TraceInput } from './types.js';
+import { invariant } from './types.js';
 
 const SECRET_KEY =
   /^(authorization|proxy-authorization|cookie|set-cookie|password|passwd|secret|access_token|refresh_token|api_key|apikey|run_token|bearer|token|token_hash)$/i;
@@ -8,7 +9,12 @@ const secrets = new Set<string>();
 export function registerSecret(secret: string): void {
   if (secret.length >= 8) secrets.add(secret);
 }
+/** Used only by trusted artifact exporters; never serialize this list. */
+export function getRegisteredSecrets(): string[] {
+  return [...secrets];
+}
 export function redact(value: unknown, extraSecrets: string[] = []): unknown {
+  if (value instanceof Date) return value.toISOString();
   if (typeof value === 'string') {
     let text = value;
     for (const secret of [...secrets, ...extraSecrets])
@@ -138,6 +144,7 @@ export class Tracer {
 
 export interface TraceFilter {
   after?: string;
+  until?: string;
   limit?: number;
   agent?: string;
   run?: string;
@@ -145,15 +152,36 @@ export interface TraceFilter {
   message?: string;
   operation?: string;
   correlation?: string;
+  traceId?: string;
+  spanId?: string;
   kind?: string;
+  kindPrefix?: string;
 }
 export async function readEvents(
   db: Sql,
   missionId: string,
   filter: TraceFilter = {},
 ): Promise<TraceEvent[]> {
+  for (const [name, value] of Object.entries({ after: filter.after, until: filter.until }))
+    if (value !== undefined)
+      invariant(
+        typeof value === 'string' &&
+          /^(0|[1-9][0-9]{0,18})$/.test(value) &&
+          BigInt(value) <= 9223372036854775807n,
+        'INVALID_CURSOR',
+        `${name} must be a nonnegative event sequence`,
+      );
+  invariant(
+    filter.limit === undefined || (Number.isSafeInteger(filter.limit) && filter.limit > 0),
+    'INVALID_LIMIT',
+    'Trace limit must be a positive integer',
+  );
   const conditions = ['mission_id=$1', 'seq>$2'];
   const args: unknown[] = [missionId, filter.after ?? '0'];
+  if (filter.until !== undefined) {
+    args.push(filter.until);
+    conditions.push(`seq<=$${args.length}`);
+  }
   for (const [key, column] of Object.entries({
     agent: 'agent_id',
     run: 'run_id',
@@ -161,13 +189,31 @@ export async function readEvents(
     message: 'message_id',
     operation: 'operation_id',
     correlation: 'correlation_id',
+    traceId: 'trace_id',
+    spanId: 'span_id',
     kind: 'kind',
   })) {
     const value = filter[key as keyof TraceFilter];
     if (value !== undefined) {
+      invariant(
+        typeof value === 'string' && value.length > 0 && value.length <= 2048,
+        'INVALID_FILTER',
+        `${key} must be a nonempty string of at most 2048 characters`,
+      );
       args.push(value);
       conditions.push(`${column}=$${args.length}`);
     }
+  }
+  if (filter.kindPrefix !== undefined) {
+    invariant(
+      typeof filter.kindPrefix === 'string' &&
+        filter.kindPrefix.length > 0 &&
+        filter.kindPrefix.length <= 128,
+      'INVALID_FILTER',
+      'kindPrefix must be a nonempty string of at most 128 characters',
+    );
+    args.push(filter.kindPrefix);
+    conditions.push(`starts_with(kind,$${args.length})`);
   }
   args.push(Math.min(Math.max(filter.limit ?? 200, 1), 2000));
   const result = await db.query<Record<string, unknown>>(

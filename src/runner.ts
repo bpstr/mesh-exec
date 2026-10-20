@@ -3,23 +3,17 @@ import {
   type ChildProcessWithoutNullStreams,
   type SpawnOptions,
 } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import {
-  mkdir,
-  open,
-  realpath,
-  rename,
-  unlink,
-  writeFile,
-  type FileHandle,
-} from 'node:fs/promises';
+import { mkdir, open, realpath, rename, unlink, type FileHandle } from 'node:fs/promises';
 import { hostname, homedir } from 'node:os';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import type { Readable } from 'node:stream';
 import { setTimeout as delay } from 'node:timers/promises';
 import {
   buildCodexInvocation,
+  CODEX_RESULT_SCHEMA,
+  CodexEventTracker,
   codexEnvironment,
   environmentSecrets,
   parseCodexRunResult,
@@ -29,6 +23,7 @@ import {
   type CodexRunResult,
   type CodexQualification,
   type CodexPreflightOptions,
+  type CodexEventCorrelation,
 } from './codex.js';
 import { buildSandboxInvocation, terminateProcessTree } from './sandbox.js';
 import { redact } from './trace.js';
@@ -54,6 +49,48 @@ export interface RunEnd {
   result: CodexRunResult | null;
   error?: string;
   reaped: boolean;
+}
+
+export interface CaptureFailure {
+  stage: string;
+  code: string;
+  message: string;
+}
+
+/** Hashes and line counts describe the retained redacted bytes. */
+export interface ArtifactCapture {
+  path: string;
+  bytes: number;
+  /** Physical newline-delimited lines, including a nonempty unterminated tail. */
+  lines: number;
+  sha256: string | null;
+  synced: boolean;
+  failures: CaptureFailure[];
+}
+
+export interface StreamCapture extends ArtifactCapture {
+  sourceBytes: number;
+  eof: boolean;
+  indexedEvents: number;
+  indexComplete: boolean;
+}
+
+export interface ResultCapture extends ArtifactCapture {
+  status: 'valid' | 'invalid' | 'missing';
+}
+
+export interface RunCaptureManifest extends Principal {
+  schemaVersion: 1;
+  finalizedAt: string;
+  status: 'complete' | 'incomplete';
+  prompt: ArtifactCapture;
+  schema: ArtifactCapture;
+  stdout: StreamCapture;
+  stderr: StreamCapture;
+  result: ResultCapture;
+  failures: CaptureFailure[];
+  /** Completion means the OS pipe write completed, not model incorporation. */
+  stdin: { bytes: number; completed: boolean; failures: CaptureFailure[] };
 }
 
 /** The store fences generations. The runner never assigns roadmap work. */
@@ -181,6 +218,119 @@ interface ProcessExit {
   error?: Error;
 }
 
+function artifactCapture(path: string): ArtifactCapture {
+  return { path, bytes: 0, lines: 0, sha256: null, synced: false, failures: [] };
+}
+
+function streamCapture(path: string): StreamCapture {
+  return {
+    ...artifactCapture(path),
+    sourceBytes: 0,
+    eof: false,
+    indexedEvents: 0,
+    indexComplete: false,
+  };
+}
+
+function captureFailure(stage: string, error: unknown, secrets: string[]): CaptureFailure {
+  const nativeCode =
+    error && typeof error === 'object' ? (error as NodeJS.ErrnoException).code : undefined;
+  return {
+    stage,
+    code:
+      typeof nativeCode === 'string' && /^[A-Z0-9_]+$/u.test(nativeCode)
+        ? nativeCode
+        : `CAPTURE_${stage.toUpperCase().replace(/[^A-Z0-9]/gu, '_')}`,
+    message: errorText(error, secrets),
+  };
+}
+
+/** Count and hash each successful write, including partial filesystem writes. */
+class ArtifactWriter {
+  private readonly hash = createHash('sha256');
+  private newlines = 0;
+  private lastByte?: number;
+
+  constructor(
+    private readonly file: FileHandle,
+    private readonly metadata: ArtifactCapture,
+  ) {}
+
+  async write(text: string): Promise<void> {
+    const bytes = Buffer.from(text);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const { bytesWritten } = await this.file.write(bytes, offset, bytes.length - offset);
+      if (bytesWritten === 0)
+        throw Object.assign(new Error('Output file accepted a zero-byte write'), {
+          code: 'CAPTURE_SHORT_WRITE',
+        });
+      const written = bytes.subarray(offset, offset + bytesWritten);
+      this.hash.update(written);
+      for (const byte of written) if (byte === 10) this.newlines++;
+      this.lastByte = written.at(-1);
+      this.metadata.bytes += bytesWritten;
+      this.metadata.lines = this.newlines + (this.lastByte === 10 ? 0 : 1);
+      offset += bytesWritten;
+    }
+  }
+
+  async finish(fail: (stage: string, error: unknown) => void): Promise<void> {
+    try {
+      await this.file.sync();
+      this.metadata.synced = true;
+    } catch (error) {
+      fail('sync', error);
+    }
+    try {
+      await this.file.close();
+    } catch (error) {
+      fail('close', error);
+    }
+    this.metadata.sha256 = this.hash.digest('hex');
+  }
+}
+
+function redactedText(text: string, secrets: string[]): string {
+  const redactor = new StreamingRedactor(secrets);
+  return redactor.write(text) + redactor.end();
+}
+
+async function persistArtifact(
+  metadata: ArtifactCapture,
+  text: string,
+  secrets: string[],
+): Promise<void> {
+  let failure: unknown;
+  const fail = (stage: string, error: unknown): void => {
+    metadata.failures.push(captureFailure(stage, error, secrets));
+    failure ??= error;
+  };
+  let file: FileHandle;
+  try {
+    file = await open(metadata.path, 'ax', 0o600);
+  } catch (error) {
+    fail('open', error);
+    throw error;
+  }
+  const writer = new ArtifactWriter(file, metadata);
+  try {
+    await writer.write(text);
+  } catch (error) {
+    fail('write', error);
+  }
+  await writer.finish(fail);
+  if (failure) throw failure;
+}
+
+function traceCorrelation(codex: CodexEventCorrelation): Partial<TraceInput> {
+  return {
+    ...(codex.threadId ? { correlationId: codex.threadId } : {}),
+    ...(codex.itemId ? { spanId: codex.itemId } : codex.turnId ? { spanId: codex.turnId } : {}),
+    ...(codex.itemId && codex.turnId ? { parentSpanId: codex.turnId } : {}),
+  };
+}
+
 /** Index lines with bounded memory; every byte remains in the complete log file. */
 class LineIndex {
   private pending = '';
@@ -218,6 +368,7 @@ class LineIndex {
         await this.consume(this.pending, this.offset, length);
         this.offset += length;
       } else {
+        await this.consume(null, this.offset, 1);
         this.offset += 1;
       }
       this.pending = '';
@@ -237,21 +388,39 @@ class LineIndex {
 async function captureOutput(
   stream: Readable,
   channel: 'stdout' | 'stderr',
-  path: string,
+  metadata: StreamCapture,
   file: FileHandle,
   principal: Principal,
   secrets: string[],
+  tracker: CodexEventTracker,
   emit: (input: TraceInput) => Promise<unknown>,
+  onFailure: (error: unknown) => void,
 ): Promise<void> {
+  const { path } = metadata;
+  const writer = new ArtifactWriter(file, metadata);
   const redactor = new StreamingRedactor(secrets);
+  let failure: unknown;
+  let writable = true;
+  let indexable = true;
+  const fail = (stage: string, error: unknown): void => {
+    metadata.failures.push(captureFailure(stage, error, secrets));
+    failure ??= error;
+    onFailure(error);
+  };
+  const emitIndexed = async (input: TraceInput): Promise<unknown> => {
+    const result = await emit(input);
+    metadata.indexedEvents++;
+    return result;
+  };
   const index = new LineIndex(async (line, offset, length) => {
+    const codex = tracker.current();
     const common = {
       ...principal,
       traceId: principal.runId,
-      data: { channel, path, offset, length },
+      data: { channel, path, offset, length, codex },
     };
     if (line === null) {
-      await emit({ ...common, kind: 'codex.output.segment' });
+      await emitIndexed({ ...common, ...traceCorrelation(codex), kind: 'codex.output.segment' });
       return;
     }
     if (channel === 'stdout' && line.trim()) {
@@ -268,15 +437,25 @@ async function captureOutput(
             ? event.type
             : 'unknown';
         const item =
-          event.item && typeof event.item === 'object'
+          event.item && typeof event.item === 'object' && !Array.isArray(event.item)
             ? (event.item as Record<string, unknown>)
             : null;
-        await emit({
+        const observed = tracker.observe(event);
+        const arguments_ =
+          item?.server === 'mesh' && item.arguments && typeof item.arguments === 'object'
+            ? (item.arguments as Record<string, unknown>)
+            : undefined;
+        const handles = Object.fromEntries(
+          ['messageId', 'taskId', 'operationId']
+            .filter((key) => typeof arguments_?.[key] === 'string')
+            .map((key) => [key, arguments_![key]]),
+        );
+        await emitIndexed({
           ...common,
           kind: `codex.${type}`,
-          ...(typeof item?.id === 'string' ? { spanId: item.id } : {}),
-          ...(typeof event.thread_id === 'string' ? { correlationId: event.thread_id } : {}),
-          data: { channel, path, offset, length, event: redact(event, secrets) },
+          ...traceCorrelation(observed),
+          ...handles,
+          data: { channel, path, offset, length, codex: observed, event: redact(event, secrets) },
         });
         // Managed policy remains authoritative. Detect unexpected remote tools
         // if the installed CLI exposes them despite the isolated configuration.
@@ -285,76 +464,151 @@ async function captureOutput(
           typeof item.server === 'string' &&
           item.server !== 'mesh'
         ) {
-          throw new Error(`Unexpected MCP server in worker output: ${item.server}`);
+          throw Object.assign(new Error(`Unexpected MCP server in worker output: ${item.server}`), {
+            code: 'UNEXPECTED_MCP_SERVER',
+          });
         }
         return;
       }
     }
-    await emit({
+    await emitIndexed({
       ...common,
+      ...traceCorrelation(codex),
       kind: `codex.${channel}`,
-      data: { channel, path, offset, length, text: line },
+      data: { channel, path, offset, length, codex, text: line },
     });
   });
+  // Index errors stop admission promptly, while the pipe continues draining to
+  // its durable file. The manifest distinguishes capture from index integrity.
+  const indexed = async (body: () => Promise<void>): Promise<void> => {
+    if (!indexable) return;
+    try {
+      await body();
+    } catch (error) {
+      indexable = false;
+      fail('index', error);
+    }
+  };
   async function append(text: string): Promise<void> {
-    if (!text) return;
-    await file.writeFile(text);
-    await index.write(text);
+    if (!text || !writable) return;
+    try {
+      await writer.write(text);
+    } catch (error) {
+      writable = false;
+      indexable = false;
+      fail('write', error);
+      return;
+    }
+    await indexed(() => index.write(text));
   }
   try {
-    for await (const chunk of stream)
-      await append(redactor.write(Buffer.isBuffer(chunk) ? chunk : String(chunk)));
-    await append(redactor.end());
-    await index.end();
-    await file.sync();
+    for await (const chunk of stream) {
+      const source = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+      metadata.sourceBytes += source.length;
+      await append(redactor.write(source));
+    }
+    metadata.eof = true;
+  } catch (error) {
+    fail('read', error);
   } finally {
-    await file.close();
+    // Even an interrupted read can have an already-received redactor tail.
+    await append(redactor.end());
+    await indexed(() => index.end());
+    metadata.indexComplete = indexable && writable && metadata.eof;
+    await writer.finish(fail);
   }
+  if (failure) throw failure;
 }
 
-async function readRunResult(
+async function captureRunResult(
   path: string,
-  archivedPath: string,
+  metadata: ResultCapture,
   secrets: string[],
-): Promise<CodexRunResult> {
-  const input = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-  const temporary = `${path}.redacted-${randomUUID()}`;
+): Promise<{ result: CodexRunResult | null; text?: string }> {
+  const fail = (stage: string, error: unknown): void => {
+    metadata.failures.push(captureFailure(stage, error, secrets));
+  };
+  let input: FileHandle;
+  try {
+    input = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  } catch (error) {
+    metadata.status = (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'missing' : 'invalid';
+    fail('open', error);
+    return { result: null };
+  }
+  metadata.status = 'invalid';
+  const temporary = `${metadata.path}.redacted-${randomUUID()}`;
   const redactor = new StreamingRedactor(secrets);
   const pieces: string[] = [];
-  let bytes = 0;
   let replaced = false;
+  let writer: ArtifactWriter | undefined;
   try {
-    if (!(await input.stat()).isFile()) throw new Error('Codex handoff must be a regular file');
+    if (!(await input.stat()).isFile())
+      throw Object.assign(new Error('Codex handoff must be a regular file'), {
+        code: 'RESULT_NOT_REGULAR',
+      });
     const output = await open(temporary, 'ax', 0o600);
+    writer = new ArtifactWriter(output, metadata);
+    const append = async (text: string): Promise<void> => {
+      await writer!.write(text);
+      if (metadata.bytes <= 8 * 1024 * 1024) pieces.push(text);
+    };
     try {
-      const append = async (text: string): Promise<void> => {
-        await output.writeFile(text);
-        bytes += Buffer.byteLength(text);
-        if (bytes <= 8 * 1024 * 1024) pieces.push(text);
-      };
       for await (const chunk of input.createReadStream({ autoClose: false }))
         await append(redactor.write(chunk as Buffer));
       await append(redactor.end());
-      await output.sync();
+    } catch (error) {
+      fail('archive', error);
     } finally {
-      await output.close();
+      await writer.finish(fail);
     }
-    await rename(temporary, archivedPath);
-    await unlink(path);
+    await rename(temporary, metadata.path);
     replaced = true;
+    if (!metadata.failures.length) await unlink(path);
+  } catch (error) {
+    fail('archive', error);
   } finally {
-    await input.close();
-    if (!replaced) await unlink(temporary).catch(() => undefined);
+    try {
+      await input.close();
+    } catch (error) {
+      fail('close', error);
+    }
+    if (!replaced) {
+      await unlink(temporary).catch(() => undefined);
+      metadata.sha256 = null;
+      metadata.synced = false;
+    }
   }
-  if (bytes > 8 * 1024 * 1024)
-    throw new Error(
-      'Codex handoff exceeds the structured result budget; the complete redacted file is retained',
+  if (metadata.failures.length) return { result: null };
+  if (metadata.bytes > 8 * 1024 * 1024) {
+    fail(
+      'validation',
+      Object.assign(
+        new Error(
+          'Codex handoff exceeds the structured result budget; the complete redacted file is retained',
+        ),
+        { code: 'RESULT_TOO_LARGE' },
+      ),
     );
-  const parsed = parseCodexRunResult(JSON.parse(pieces.join('')));
-  if (['idle', 'blocked'].includes(parsed.outcome) && parsed.work_revision === null) {
-    throw new Error('A parked run must report work_revision from mesh_yield');
+    return { result: null };
   }
-  return parsed;
+  const text = pieces.join('');
+  try {
+    const parsed = parseCodexRunResult(JSON.parse(text));
+    if (['idle', 'blocked'].includes(parsed.outcome) && parsed.work_revision === null) {
+      throw Object.assign(new Error('A parked run must report work_revision from mesh_yield'), {
+        code: 'RESULT_MISSING_WORK_REVISION',
+      });
+    }
+    metadata.status = 'valid';
+    return { result: parsed, text };
+  } catch (error) {
+    fail(
+      'validation',
+      error instanceof SyntaxError ? Object.assign(error, { code: 'RESULT_INVALID_JSON' }) : error,
+    );
+    return { result: null, text };
+  }
 }
 
 /** Maintain N peers; useful work is discovered by those peers, never dispatched here. */
@@ -473,6 +727,22 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
       externallySandboxed: process.platform === 'darwin',
     });
     const secrets = [...globalSecrets, allocation.token];
+    const promptInput = `${invocation.prompt}\n`;
+    const promptText = redactedText(promptInput, secrets);
+    const tracker = new CodexEventTracker();
+    const manifest: RunCaptureManifest = {
+      ...principal,
+      schemaVersion: 1,
+      finalizedAt: '',
+      status: 'incomplete',
+      prompt: artifactCapture(join(runDirectory, 'prompt.txt')),
+      schema: artifactCapture(join(runDirectory, 'result.schema.json')),
+      stdout: streamCapture(join(runDirectory, 'stdout.jsonl')),
+      stderr: streamCapture(join(runDirectory, 'stderr.log')),
+      result: { ...artifactCapture(join(runDirectory, 'result.json')), status: 'missing' },
+      stdin: { bytes: Buffer.byteLength(promptInput), completed: false, failures: [] },
+      failures: [],
+    };
     const runEmit = (input: TraceInput): Promise<unknown> =>
       emit({ ...input, data: redact(input.data, secrets) });
     let child: ChildProcessWithoutNullStreams | undefined;
@@ -519,14 +789,33 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
       }
     };
     const onAbort = (): void => stop('aborted');
+    const onCaptureFailure = (error: unknown): void => {
+      fatal ??= error;
+      abort('stalled', 'Worker trace persistence failed');
+      stop('failed');
+    };
     try {
       await prepareCodexRunFiles(invocation, workerDirectory);
       // The worker sees its own result/schema directory. The audit copy of the
       // actual stdin and the complete logs are outside every writable mount.
-      await writeFile(join(runDirectory, 'prompt.txt'), `${invocation.prompt}\n`, {
-        flag: 'wx',
-        mode: 0o600,
-      });
+      try {
+        await persistArtifact(manifest.prompt, promptText, secrets);
+        await persistArtifact(
+          manifest.schema,
+          `${JSON.stringify(CODEX_RESULT_SCHEMA, null, 2)}\n`,
+          secrets,
+        );
+        await runEmit({
+          ...principal,
+          traceId: principal.runId,
+          kind: 'run.prompt',
+          data: { text: promptText, artifact: manifest.prompt },
+        });
+      } catch (error) {
+        manifest.failures.push(captureFailure('prompt', error, secrets));
+        onCaptureFailure(error);
+        throw error;
+      }
       const codexHome = resolve(
         environment.CODEX_HOME ?? join(environment.HOME ?? homedir(), '.codex'),
       );
@@ -563,10 +852,15 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
         hiddenPaths,
       });
       if (controller.signal.aborted) throw new Error('Runner stopped before process launch');
-      const stdoutPath = join(runDirectory, 'stdout.jsonl');
-      const stderrPath = join(runDirectory, 'stderr.log');
-      unopenedConsumers.push(await open(stdoutPath, 'ax', 0o600));
-      unopenedConsumers.push(await open(stderrPath, 'ax', 0o600));
+      for (const stream of [manifest.stdout, manifest.stderr]) {
+        try {
+          unopenedConsumers.push(await open(stream.path, 'ax', 0o600));
+        } catch (error) {
+          stream.failures.push(captureFailure('open', error, secrets));
+          onCaptureFailure(error);
+          throw error;
+        }
+      }
       await runEmit({
         ...principal,
         traceId: principal.runId,
@@ -603,31 +897,31 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
         captureOutput(
           child.stdout,
           'stdout',
-          stdoutPath,
+          manifest.stdout,
           unopenedConsumers[0],
           principal,
           secrets,
+          tracker,
           runEmit,
+          onCaptureFailure,
         ),
         captureOutput(
           child.stderr,
           'stderr',
-          stderrPath,
+          manifest.stderr,
           unopenedConsumers[1],
           principal,
           secrets,
+          tracker,
           runEmit,
+          onCaptureFailure,
         ),
       ];
       unopenedConsumers = [];
-      for (const stream of capture)
-        void stream.catch((error: unknown) => {
-          fatal ??= error;
-          abort('stalled', 'Worker trace persistence failed');
-          stop('failed');
-        });
+      for (const stream of capture) void stream.catch(onCaptureFailure);
       child.stdin.on('error', (error) => {
         processFailure ??= error;
+        manifest.stdin.failures.push(captureFailure('stdin', error, secrets));
         stop('failed');
       });
       controller.signal.addEventListener('abort', onAbort, { once: true });
@@ -640,7 +934,18 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
         kind: 'run.started',
         data: { pid: child.pid ?? null, logDirectory: runDirectory },
       });
-      child.stdin.end(`${invocation.prompt}\n`);
+      await new Promise<void>((resolveInput, rejectInput) => {
+        child!.stdin.end(promptInput, (error?: Error | null) => {
+          if (error) {
+            if (!manifest.stdin.failures.length)
+              manifest.stdin.failures.push(captureFailure('stdin', error, secrets));
+            rejectInput(error);
+          } else {
+            manifest.stdin.completed = true;
+            resolveInput();
+          }
+        });
+      });
       const exit = await Promise.race([closed, stopFailure]);
       result.exitCode = exit.code;
       result.signal = exit.signal;
@@ -650,26 +955,10 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
       await Promise.all(capture);
       if (exit.error) throw exit.error;
       result.status = stopped ?? (exit.code === 0 ? 'exited' : 'failed');
-      if (result.status === 'exited')
-        result.result = await readRunResult(
-          invocation.resultPath,
-          join(runDirectory, 'result.json'),
-          secrets,
-        );
-      else {
-        // Failed runs can still write a handoff; sanitize it before retaining it.
-        await readRunResult(
-          invocation.resultPath,
-          join(runDirectory, 'result.json'),
-          secrets,
-        ).catch((error: unknown) => {
-          if ((error as NodeJS.ErrnoException).code !== 'ENOENT')
-            result.error = errorText(error, secrets);
-        });
-      }
     } catch (error) {
       result.status = stopped ?? 'failed';
       result.error = errorText(error, secrets);
+      manifest.failures.push(captureFailure('run', error, secrets));
     } finally {
       if (timer) clearTimeout(timer);
       controller.signal.removeEventListener('abort', onAbort);
@@ -681,11 +970,16 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
         if (child) {
           if (stopPromise) await stopPromise;
           await terminate(child);
-          if (closed) await closed;
+          if (closed) {
+            const exit = await closed;
+            result.exitCode = exit.code;
+            result.signal = exit.signal;
+          }
           processReaped = true;
         }
       } catch (error) {
         cleanupErrors.push(error);
+        manifest.failures.push(captureFailure('process-reap', error, secrets));
         fatal ??= error;
         abort('stalled', 'A worker process could not be reaped');
       }
@@ -697,6 +991,7 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
         operationsReaped = true;
       } catch (error) {
         cleanupErrors.push(error);
+        manifest.failures.push(captureFailure('operation-cleanup', error, secrets));
       }
       if (!processReaped && child) {
         child.stdin.destroy();
@@ -710,11 +1005,112 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
       for (const written of lifecycle)
         if (written.status === 'rejected') cleanupErrors.push(written.reason);
       result.reaped = processReaped && operationsReaped;
+      // Archive the final assistant output after its producer is quiescent,
+      // independently of exit status or failures in the JSON event index.
+      let handoff: { result: CodexRunResult | null; text?: string } = { result: null };
+      if (processReaped) {
+        handoff = await captureRunResult(invocation.resultPath, manifest.result, secrets);
+        result.result = handoff.result;
+      } else {
+        manifest.result.status = 'invalid';
+        manifest.result.failures.push({
+          stage: 'archive',
+          code: 'RESULT_NOT_QUIESCENT',
+          message: 'Final output was not read because its producer could not be reaped',
+        });
+      }
+      if (result.status === 'exited' && manifest.result.status !== 'valid') {
+        result.status = 'failed';
+        result.error =
+          manifest.result.failures.map((error) => error.message).join('; ') ||
+          'Missing final handoff';
+      }
+      try {
+        await runEmit({
+          ...principal,
+          traceId: principal.runId,
+          ...traceCorrelation(tracker.current()),
+          kind: 'run.handoff',
+          data: {
+            status: manifest.result.status,
+            result: handoff.result,
+            artifact: manifest.result,
+            ...(handoff.text !== undefined ? { text: handoff.text } : {}),
+          },
+        });
+      } catch (error) {
+        manifest.failures.push(captureFailure('handoff-index', error, secrets));
+        cleanupErrors.push(error);
+      }
       if (cleanupErrors.length) {
         result.status = 'failed';
         result.error = cleanupErrors.map((error) => errorText(error, secrets)).join('; ');
         fatal ??= cleanupErrors[0];
         abort('stalled', 'A worker or its workspace operations could not be reaped');
+      }
+      manifest.finalizedAt = new Date().toISOString();
+      const artifacts = [
+        manifest.prompt,
+        manifest.schema,
+        manifest.stdout,
+        manifest.stderr,
+        manifest.result,
+      ];
+      manifest.status =
+        !manifest.failures.length &&
+        !cleanupErrors.length &&
+        artifacts.every(
+          (artifact) => artifact.synced && artifact.sha256 !== null && !artifact.failures.length,
+        ) &&
+        manifest.stdout.eof &&
+        manifest.stderr.eof &&
+        manifest.stdout.indexComplete &&
+        manifest.stderr.indexComplete &&
+        manifest.stdin.completed &&
+        !manifest.stdin.failures.length &&
+        manifest.result.status === 'valid'
+          ? 'complete'
+          : 'incomplete';
+      const writeManifest = async (): Promise<void> => {
+        const temporary = artifactCapture(join(runDirectory, `capture.json.tmp-${randomUUID()}`));
+        try {
+          await persistArtifact(temporary, `${JSON.stringify(manifest, null, 2)}\n`, secrets);
+          await rename(temporary.path, join(runDirectory, 'capture.json'));
+          const directory = await open(runDirectory, 'r');
+          try {
+            await directory.sync();
+          } finally {
+            await directory.close();
+          }
+        } finally {
+          await unlink(temporary.path).catch(() => undefined);
+        }
+      };
+      try {
+        await writeManifest();
+      } catch (error) {
+        manifest.status = 'incomplete';
+        manifest.failures.push(captureFailure('manifest', error, secrets));
+        result.status = 'failed';
+        result.error = errorText(error, secrets);
+        fatal ??= error;
+        abort('stalled', 'Capture manifest persistence failed');
+      }
+      try {
+        await runEmit({
+          ...principal,
+          traceId: principal.runId,
+          kind: manifest.status === 'complete' ? 'run.capture.completed' : 'run.capture.incomplete',
+          data: manifest,
+        });
+      } catch (error) {
+        manifest.status = 'incomplete';
+        manifest.failures.push(captureFailure('manifest-index', error, secrets));
+        result.status = 'failed';
+        result.error = errorText(error, secrets);
+        fatal ??= error;
+        abort('stalled', 'Capture manifest indexing failed');
+        await writeManifest().catch(() => undefined);
       }
       // No heartbeat can be needed after both process and operation cleanup.
       // Removing before the state update also avoids racing an in-flight tick.

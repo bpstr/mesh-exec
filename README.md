@@ -159,14 +159,21 @@ Observation commands query PostgreSQL directly, so they remain usable after the 
 
 ```bash
 mesh status --mission MISSION_ID
+mesh runs --mission MISSION_ID --agent A1
+mesh runs --mission MISSION_ID --run RUN_ID
 mesh trace --mission MISSION_ID --follow
 mesh messages --mission MISSION_ID --agent A1 --pending
+mesh messages --mission MISSION_ID --all
+mesh conversation --mission MISSION_ID --task TASK_ID
 mesh logs --mission MISSION_ID --run RUN_ID --stream stderr
 mesh export --mission MISSION_ID --out ./mission-export
+mesh verify-export ./mission-export
 mesh metrics --mission MISSION_ID
 ```
 
 Full internal A2A text and structured message parts are retained, with receipt, exposure, acknowledgement, reply, and task state recorded separately. Complete stdout/stderr streams are captured in private runtime files outside worker-writable output directories. Known credentials are redacted. The trace records the outputs the CLI exposes; it does not promise access to hidden model reasoning.
+
+`messages --all` includes queued and failed outgoing intents, so a question is visible before it reaches an inbox. `conversation` follows the linked transport, exposure, handling, and reply events across replacement runs. Per-run `capture.json` manifests record bytes, hashes, end-of-stream, index completeness, prompt and handoff artifacts, and capture failures. Export bundles have a fixed database snapshot and event boundary, streamed file copies, integrity metadata, and explicit partial/missing reports. `verify-export` checks a bundle offline. An authenticated SSE event feed supports live operator integrations and replay with `Last-Event-ID`.
 
 See [observability](docs/observability.md) for filters, correlation IDs, exports, metric names, and the difference between delivery and handling.
 

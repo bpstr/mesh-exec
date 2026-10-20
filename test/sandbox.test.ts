@@ -30,7 +30,9 @@ test('OS sandbox isolates private audit files while permitting worker output and
       const fs = require('node:fs'), assert = require('node:assert/strict');
       fs.writeFileSync(${JSON.stringify(join(worker, 'result.json'))}, 'handoff');
       assert.throws(() => fs.readFileSync(${JSON.stringify(join(runtime, 'audit.log'))}));
-      assert.throws(() => fs.writeFileSync(${JSON.stringify(join(runtime, 'audit.log'))}, 'bad'));
+      // Linux hides this path behind a disposable tmpfs; macOS denies access.
+      // Either way the real host audit file must remain unchanged below.
+      try { fs.writeFileSync(${JSON.stringify(join(runtime, 'audit.log'))}, 'bad'); } catch {}
       assert.throws(() => fs.writeFileSync('.git/config', 'bad'));
       fs.writeFileSync('output.txt', 'authorized');
     `;

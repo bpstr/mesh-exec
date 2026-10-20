@@ -1,0 +1,166 @@
+{
+  "passed": false,
+  "checks": {
+    "three_normal_first_generation_handoffs": true,
+    "one_request_sent_and_answered_per_peer": true,
+    "six_deliveries_all_handled": true,
+    "one_checkpoint_per_peer": true,
+    "no_tool_failures": false,
+    "no_native_commands_or_edits": true,
+    "efficiency_target_at_most_30_mesh_calls": true,
+    "three_terminal_usage_receipts": true,
+    "source_unchanged": true,
+    "no_missing_export_artifacts": true
+  },
+  "toolCalls": {
+    "mesh_join": 3,
+    "mesh_send": 6,
+    "mesh_poll": 6,
+    "mesh_reply": 3,
+    "mesh_ack": 3,
+    "mesh_checkpoint": 3,
+    "mesh_yield": 3
+  },
+  "totalToolCalls": 27,
+  "usage": {
+    "input_tokens": 709520,
+    "output_tokens": 4465,
+    "cached_input_tokens": 638208,
+    "reasoning_output_tokens": 803,
+    "cache_write_input_tokens": 0
+  },
+  "partialUsage": {
+    "input_tokens": 709520,
+    "output_tokens": 4465,
+    "cached_input_tokens": 638208,
+    "reasoning_output_tokens": 803,
+    "cache_write_input_tokens": 0
+  },
+  "receiptCount": 3,
+  "failures": [
+    {
+      "id": "e931df46-2840-4623-8fdf-c34b6cd1b655",
+      "missionId": "48cf07d2-478d-4d16-88f8-1eb6086a4b1d",
+      "seq": "55",
+      "at": "2026-10-20T17:26:42.528Z",
+      "kind": "tool.mesh_send.completed",
+      "agentId": "A3",
+      "runId": "f569e554-3a48-40be-8a75-257168f02175",
+      "traceId": "94605d80f7c1b6531a88f6081d7076f6",
+      "spanId": "7152bc33b75a24b3",
+      "parentSpanId": null,
+      "correlationId": "f569e554-3a48-40be-8a75-257168f02175",
+      "causationId": "b0c5ce48-1a30-4667-9368-6fd1d119fc6b",
+      "messageId": "a3-status-format-proposal",
+      "taskId": "brief-team-updates",
+      "operationId": null,
+      "data": {
+        "result": {
+          "task": null,
+          "error": {
+            "name": "TaskNotFoundError",
+            "message": "Task not found"
+          },
+          "state": "failed",
+          "traceId": "ea36d16c-fa8d-495c-a1f7-a65c5de311db",
+          "attempts": 1,
+          "outboxId": "0ba7fe37-0271-4bb5-ab84-977c763b4854",
+          "messageId": "a3-status-format-proposal",
+          "recipientId": "A1"
+        },
+        "durationMs": 417.96458300000086
+      }
+    },
+    {
+      "id": "66c0d3c1-d934-449a-b36b-b0a39cd2c55b",
+      "missionId": "48cf07d2-478d-4d16-88f8-1eb6086a4b1d",
+      "seq": "112",
+      "at": "2026-10-20T17:26:57.813Z",
+      "kind": "tool.mesh_send.completed",
+      "agentId": "A2",
+      "runId": "b235c10c-5eea-4158-8217-adeb0cefee10",
+      "traceId": "51121edacff2aa3644a18d6bb9d70fe2",
+      "spanId": "fcac1a8811e0466d",
+      "parentSpanId": null,
+      "correlationId": "b235c10c-5eea-4158-8217-adeb0cefee10",
+      "causationId": "9a3f48dd-b6f9-4cb4-9263-bd116dd252bc",
+      "messageId": "a2-reply-a1-format-proposal-v1",
+      "taskId": "9634b5db-bdad-44f7-b2c3-7ddc4b6427c5",
+      "operationId": null,
+      "data": {
+        "result": {
+          "task": null,
+          "error": {
+            "name": "TaskNotFoundError",
+            "message": "Task not found"
+          },
+          "state": "failed",
+          "traceId": "2e2fe9c6-4bcd-456b-a238-cbf6f1215b79",
+          "attempts": 1,
+          "outboxId": "a6aa96be-fd38-479b-90a8-dbc654f5ccdb",
+          "messageId": "a2-reply-a1-format-proposal-v1",
+          "recipientId": "A1"
+        },
+        "durationMs": 1357.2831250000017
+      }
+    },
+    {
+      "id": "cb12d54e-d77f-4567-b207-c75dc5189c77",
+      "missionId": "48cf07d2-478d-4d16-88f8-1eb6086a4b1d",
+      "seq": "138",
+      "at": "2026-10-20T17:27:11.367Z",
+      "kind": "tool.mesh_send.completed",
+      "agentId": "A2",
+      "runId": "b235c10c-5eea-4158-8217-adeb0cefee10",
+      "traceId": "9ef8b42bed499c502995dab67eef729e",
+      "spanId": "c739bf04f0eccfef",
+      "parentSpanId": null,
+      "correlationId": "b235c10c-5eea-4158-8217-adeb0cefee10",
+      "causationId": "bcd6dab0-4250-4243-bbe9-92094c034fec",
+      "messageId": "a2-reply-a1-format-proposal-v2",
+      "taskId": null,
+      "operationId": null,
+      "data": {
+        "result": {
+          "task": null,
+          "error": {
+            "name": "RequestMalformedError",
+            "message": "The supplied context is not accessible at this peer."
+          },
+          "state": "failed",
+          "traceId": "c83b295d-8f6b-44d3-b858-93b863d725a3",
+          "attempts": 1,
+          "outboxId": "beb9b321-5645-4882-aef8-fb8697d4f9d8",
+          "messageId": "a2-reply-a1-format-proposal-v2",
+          "recipientId": "A1"
+        },
+        "durationMs": 71.51487500000076
+      }
+    }
+  ],
+  "rawToolFailures": [
+    {
+      "run": "b235c10c-5eea-4158-8217-adeb0cefee10",
+      "itemId": "item_4",
+      "tool": "mesh_send"
+    },
+    {
+      "run": "b235c10c-5eea-4158-8217-adeb0cefee10",
+      "itemId": "item_5",
+      "tool": "mesh_send"
+    },
+    {
+      "run": "f569e554-3a48-40be-8a75-257168f02175",
+      "itemId": "item_2",
+      "tool": "mesh_send"
+    }
+  ],
+  "nativeCommands": [],
+  "sourceHashes": {
+    "ROADMAP.md": "751e23fc9f3003629d89b4656b9c25ac9b2691acade30df09ca19a200224c12a"
+  },
+  "missionState": "resource-limit",
+  "scope": "Communication exercise acceptance only; not implementation-mission acceptance.",
+  "totalReportedTokens": 713985,
+  "uncachedInputTokens": 71312
+}

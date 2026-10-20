@@ -4,7 +4,7 @@ Run independent Codex CLI peers against one roadmap and one shared Git checkout.
 
 Each stable slot, such as `A1`, runs successive finite Codex processes. A new process receives a fresh credential and generation, then recovers its context from the roadmap, shared board, inbox, and handoffs. PostgreSQL holds coordination memory and durable A2A state. There is no parent LLM assigning work, no queue of roadmap fragments, and no worktree per agent.
 
-**Status: experimental implementation.** Automated checks exercise protocol, persistence, process lifecycle, exports, and real Linux/macOS workspace controls. A [five-agent live Terra pilot](artifacts/review-2026-10-20/live-run/REPORT.md) produced a working sample with six passing tests, but did not reach mission acceptance: reviewers exited before a later requirement revision was reviewed, and the five-launch budget prevented replacements. Unattended completion and 50/100-agent throughput remain unqualified. See [development and qualification](docs/development.md).
+**Status: experimental implementation.** Automated checks exercise protocol, persistence, process lifecycle, exports, and real Linux/macOS workspace controls. The [latest five-agent Terra run](artifacts/participation-2026-10-20/REPORT.md) reached mission acceptance in about two minutes, with all 18 messages acknowledged and six app tests plus four independent checks passing. General [participation rules](docs/coordination.md) keep idle peers reachable for review. Completion teardown prevented terminal usage receipts; that accounting limitation is recorded in the report. Unattended completion and 50/100-agent throughput remain unqualified. See [development and qualification](docs/development.md).
 
 ## How it works
 
@@ -20,7 +20,7 @@ flowchart TD
 
 The common instruction is: **implement this roadmap in this repository; consult the other peers.** Every peer can read the same roadmap and board. It announces an intention, claims the resources it chooses, asks relevant peers for context or review, and publishes evidence as it works. A conflicting claim returns its current owners so the agent can coordinate or choose another opportunity.
 
-The wrapper starts up to the configured number of Codex processes, enforces time and run budgets, and replaces finished generations. Idle or blocked slots park until a meaningful coordination revision changes. A stopped process is not an empty mailbox: its successor inherits the stable slot's unhandled messages and existing tasks.
+The wrapper starts up to the configured number of Codex processes, enforces time and run budgets, and replaces finished generations. Idle slots immediately start a fresh generation. Blocked slots park until a meaningful coordination revision changes; mission acceptance pauses new admissions. A stopped process is not an empty mailbox: its successor inherits the stable slot's unhandled messages and existing tasks.
 
 Long commands run behind durable operation handles. Source changes go through one guarded publication service. Completion requires recorded requirements, evidence, independent reviews, handled messages, and final checks against an unchanged source manifest. A model's final message is a handoff, not the completion authority.
 
@@ -113,17 +113,26 @@ No predefined task decomposition is required. Peers interpret the roadmap into a
 
 ### Budgets and population
 
-| Option             | Default                                                 | Meaning                                                                         |
-| ------------------ | ------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `--agents`         | `10`                                                    | Maximum managed Codex processes at once; creates stable slots for a new mission |
-| `--max-runs`       | `100`                                                   | Total run starts permitted during this invocation, across all slots             |
-| `--max-minutes`    | `120`                                                   | Wall-clock budget for this runner invocation                                    |
-| `--run-minutes`    | `20`                                                    | Maximum duration of an individual Codex run                                     |
-| `--heavy-commands` | `2`                                                     | Separate capacity for daemon-managed commands                                   |
-| `--port`           | `7331`                                                  | Loopback HTTP port; `0` selects a free port                                     |
-| `--model`          | CLI default                                             | Model name passed to Codex                                                      |
-| `--codex`          | `codex`                                                 | Codex executable path                                                           |
-| `--state-dir`      | Per-checkout directory under the user's state directory | Runtime state and logs, outside the checkout                                    |
+| Option             | Default                                                 | Meaning                                                                           |
+| ------------------ | ------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `--agents`         | `10`                                                    | Maximum managed Codex processes at once; creates stable slots for a new mission   |
+| `--max-runs`       | `100`                                                   | Total run starts permitted during this invocation, across all slots               |
+| `--max-minutes`    | `120`                                                   | Wall-clock budget for this runner invocation                                      |
+| `--timeout`        | Unset                                                   | Duration such as `30m`; overrides `--max-minutes` and removes the default run cap |
+| `--run-minutes`    | `20`                                                    | Maximum duration of an individual Codex run                                       |
+| `--heavy-commands` | `2`                                                     | Separate capacity for daemon-managed commands                                     |
+| `--port`           | `7331`                                                  | Loopback HTTP port; `0` selects a free port                                       |
+| `--model`          | CLI default                                             | Model name passed to Codex                                                        |
+| `--codex`          | `codex`                                                 | Codex executable path                                                             |
+| `--state-dir`      | Per-checkout directory under the user's state directory | Runtime state and logs, outside the checkout                                      |
+
+To maintain five agents for up to 30 minutes, with capacity to replace exited processes:
+
+```bash
+mesh run --repo /path/to/repo --roadmap ROADMAP.md --agents 5 --timeout 30m
+```
+
+`--timeout` accepts `ms`, `s`, `m`, or `h` (bare numbers mean minutes) and takes precedence over `--max-minutes`. It removes the default 100-run cap; an explicit `--max-runs` or configured `maxRuns` still applies. At the deadline, the runner stops and reaps active agents and their managed commands. Mission completion can stop it earlier, and blocked slots still wait for work revisions.
 
 For a new mission, the same interface accepts larger populations:
 
@@ -174,7 +183,7 @@ See [observability](docs/observability.md) for filters, correlation IDs, exports
 
 The [protocol reference](docs/protocol.md) describes every MCP tool, the A2A transport, file publication, and acceptance rules.
 
-The supported baseline uses explicit `mesh_poll` calls at bootstrap, work transitions, before dependent changes, and before exit. A `mesh mailbox-hook` helper is shipped, but hooks are disabled in managed Codex invocations. Enabling a hook adapter requires separate local qualification; it is not required for message delivery.
+The supported baseline handles inbox messages explicitly at work transitions. Idle implementation peers use `mesh_wait` to stay reachable in their existing process until acceptance or an operator stop. A `mesh mailbox-hook` helper is shipped, but hooks are disabled in managed Codex invocations. Enabling a hook adapter requires separate local qualification; it is not required for message delivery.
 
 The source manifest includes Git-tracked paths and untracked paths that are not ignored, with content hashes, types, and modes. Ignored dependencies, ignored generated outputs, external services, and arbitrary host state are outside that source basis. `mesh_patch` publishes complete UTF-8 file replacements or deletions; it is not a binary-file editing API. All agent writes use the guarded workspace service, and only one daemon owns the checkout. An unrelated host process writing into the checkout is outside this coordination contract.
 

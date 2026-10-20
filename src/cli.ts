@@ -39,6 +39,7 @@ Runtime options:
   --agents <n>             Maximum managed CLI processes; default 10
   --max-runs <n>           Total run budget; default 100
   --max-minutes <n>        Mission wall-clock budget; default 120
+  --timeout <duration>     Wall-clock limit, e.g. 30m; replaces the default run budget
   --run-minutes <n>        Per-run time limit; default 20
   --heavy-commands <n>     Concurrent tool commands; default 2
   --model <name>           Use the specified Codex model
@@ -62,6 +63,35 @@ function numberOption(value: unknown, fallback: number, name: string): number {
   );
   return n;
 }
+export function runnerBudget(input: {
+  timeout?: string;
+  maxRuns?: unknown;
+  maxMinutes?: unknown;
+}): { maxRuns: number; maxElapsedMs: number } {
+  let maxElapsedMs = numberOption(input.maxMinutes, 120, 'max-minutes') * 60_000;
+  if (input.timeout !== undefined) {
+    const match = /^(\d+(?:\.\d+)?)(ms|s|m|h)?$/u.exec(input.timeout);
+    invariant(match, 'INVALID_OPTION', 'timeout must be a positive duration, e.g. 30m');
+    const unit = match[2] ?? 'm';
+    const multiplier = { ms: 1, s: 1000, m: 60_000, h: 3_600_000 }[unit]!;
+    maxElapsedMs = Number(match[1]) * multiplier;
+  }
+  invariant(
+    Number.isSafeInteger(maxElapsedMs) && maxElapsedMs > 0 && maxElapsedMs <= 2_147_483_647,
+    'INVALID_OPTION',
+    'Runner timeout must be between 1ms and 2147483647ms',
+  );
+  return {
+    maxElapsedMs,
+    // An explicit duration should run until its deadline unless a run cap is supplied.
+    maxRuns: numberOption(
+      input.maxRuns,
+      input.timeout === undefined ? 100 : Number.MAX_SAFE_INTEGER,
+      'max-runs',
+    ),
+  };
+}
+
 export async function main(argv = process.argv.slice(2)): Promise<void> {
   if (argv[0] === 'mailbox-hook') {
     await mailboxHookMain();
@@ -81,6 +111,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
       mission: { type: 'string' },
       'max-runs': { type: 'string' },
       'max-minutes': { type: 'string' },
+      timeout: { type: 'string' },
       'run-minutes': { type: 'string' },
       'heavy-commands': { type: 'string' },
       model: { type: 'string' },
@@ -185,6 +216,11 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   process.once('SIGTERM', onSignal);
   try {
     if (command === 'run' || command === 'daemon') {
+      const budget = runnerBudget({
+        timeout: values.timeout,
+        maxRuns: values['max-runs'] ?? config.maxRuns,
+        maxMinutes: values['max-minutes'] ?? config.maxMinutes,
+      });
       if (command === 'run') {
         await assertSandboxAvailable();
         const qualification = await preflightCodex({ codexBinary, repository: repo });
@@ -234,6 +270,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
           'heavy-commands',
         ),
         config: {
+          workflow: config.workflow ?? 'implementation',
           verification: verification ?? [],
           model: values.model ?? config.model,
           codexBinary: codexBinary ?? 'codex',
@@ -270,9 +307,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
             events: daemon.store.events,
             stopOperations: (p) => daemon.workspace.cancelRun(p.runId),
             concurrency: Number(mission.config.agents),
-            maxRuns: numberOption(values['max-runs'] ?? config.maxRuns, 100, 'max-runs'),
-            maxElapsedMs:
-              numberOption(values['max-minutes'] ?? config.maxMinutes, 120, 'max-minutes') * 60_000,
+            ...budget,
             runTimeoutMs:
               numberOption(values['run-minutes'] ?? config.runMinutes, 20, 'run-minutes') * 60_000,
             codexBinary,

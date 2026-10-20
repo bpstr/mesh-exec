@@ -175,7 +175,13 @@ export async function startDaemon(options: DaemonOptions): Promise<RunningDaemon
       baseUrl: url,
     });
     completion = new Completion(store, workspace);
-    const meshTools = new MeshTools(store, a2a, workspace, completion);
+    const workflow = (await store.mission(missionId)).config.workflow ?? 'implementation';
+    invariant(
+      workflow === 'implementation' || workflow === 'discussion',
+      'INVALID_WORKFLOW',
+      'Workflow must be implementation or discussion',
+    );
+    const meshTools = new MeshTools(store, a2a, workspace, completion, workflow);
     const a2aRouter = a2a.router();
     app.use((req, res, next) => {
       if (req.path.startsWith('/agents/')) a2aRouter(req, res, next);

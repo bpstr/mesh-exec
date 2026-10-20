@@ -1,0 +1,18 @@
+{
+  "removed": [
+    {
+      "path": "/private/tmp/mesh-exec-terra-five-20261020/candidate/dist",
+      "fileBytes": 575635
+    }
+  ],
+  "freeBytesAfter": 15017897984,
+  "ports": {
+    "54428": "closed",
+    "9229": "closed",
+    "5432": "listening",
+    "55433": "listening"
+  },
+  "pilotProcessExited": true,
+  "processesStopped": [],
+  "note": "Pilot and inspector closed naturally; five recorded agent exits. No browser launched. Candidate source, runtime and qualification evidence preserved; unrelated services untouched."
+}

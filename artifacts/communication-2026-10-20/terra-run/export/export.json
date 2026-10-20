@@ -1,0 +1,24 @@
+{
+  "missionId": "48cf07d2-478d-4d16-88f8-1eb6086a4b1d",
+  "exportedAt": "2026-10-20T17:27:48.970Z",
+  "events": 214,
+  "artifacts": [
+    "runs/da650b3a-be52-4c2b-aa04-2e33a4c15013/stdout.jsonl",
+    "runs/da650b3a-be52-4c2b-aa04-2e33a4c15013/stderr.log",
+    "runs/da650b3a-be52-4c2b-aa04-2e33a4c15013/result.json",
+    "runs/da650b3a-be52-4c2b-aa04-2e33a4c15013/prompt.txt",
+    "runs/da650b3a-be52-4c2b-aa04-2e33a4c15013/result.schema.json",
+    "runs/f569e554-3a48-40be-8a75-257168f02175/stdout.jsonl",
+    "runs/f569e554-3a48-40be-8a75-257168f02175/stderr.log",
+    "runs/f569e554-3a48-40be-8a75-257168f02175/result.json",
+    "runs/f569e554-3a48-40be-8a75-257168f02175/prompt.txt",
+    "runs/f569e554-3a48-40be-8a75-257168f02175/result.schema.json",
+    "runs/b235c10c-5eea-4158-8217-adeb0cefee10/stdout.jsonl",
+    "runs/b235c10c-5eea-4158-8217-adeb0cefee10/stderr.log",
+    "runs/b235c10c-5eea-4158-8217-adeb0cefee10/result.json",
+    "runs/b235c10c-5eea-4158-8217-adeb0cefee10/prompt.txt",
+    "runs/b235c10c-5eea-4158-8217-adeb0cefee10/result.schema.json"
+  ],
+  "missing": [],
+  "redaction": "Bearer tokens, known run credentials, API-key patterns, and credential fields redacted; application text is retained."
+}

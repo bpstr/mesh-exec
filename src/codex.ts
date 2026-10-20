@@ -3,7 +3,6 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { promisify } from 'node:util';
-import { coordinationInstructions } from './coordination.js';
 
 /** The final message is a handoff, never proof that the mission is complete. */
 export const CODEX_RESULT_SCHEMA = {
@@ -86,10 +85,11 @@ export function buildCodexInvocation(options: CodexInvocationOptions): CodexInvo
     ? options.roadmapPath
     : resolve(cwd, options.roadmapPath);
   const prompt = [
-    'Implement the mission roadmap in this repository. Consult with the other mesh peers.',
+    'Fulfil the mission roadmap with the other mesh peers.',
     `Mission: ${options.missionId}. Roadmap: ${JSON.stringify(roadmapPath)}.`,
     `Your slot is ${options.slotId}; this is run ${options.runId}, generation ${options.generation}.`,
-    coordinationInstructions,
+    'Call mesh_join first for the roadmap, peer state, and general workflow. Follow that workflow and use only its advertised mesh tools. Do not start other agents.',
+    'Follow the joined workflow participation policy. In implementation missions, finishing your files or calling mesh_yield does not finish your participation: use mesh_wait to remain reachable until acceptance or an operator stop. Do not send a final handoff while mayExit=false. Handle your inbox with mesh_poll; when the workflow permits exit, checkpoint and copy workRevision into final work_revision.',
   ].join('\n');
 
   const args = [

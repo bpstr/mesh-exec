@@ -1,0 +1,8 @@
+{
+  "missionId": "01691e7c-e5f6-4235-9060-95b1a40f7a55",
+  "supervisorId": "b2f1fa78-a68c-4ad9-a9ab-109676e4f0e1",
+  "epoch": 1,
+  "runsStarted": 5,
+  "runsFinished": 5,
+  "state": "resource-limit"
+}

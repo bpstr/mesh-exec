@@ -1,0 +1,94 @@
+[
+  {
+    "task_id": "580a0f34-b46b-45b7-89e0-a898e18eaf45",
+    "mission_id": "01691e7c-e5f6-4235-9060-95b1a40f7a55",
+    "recipient_id": "A1",
+    "sender_id": "A2",
+    "context_id": "bf00ee43-0292-4790-801b-e3b6e75f65b0",
+    "state": 1,
+    "task": {
+      "id": "580a0f34-b46b-45b7-89e0-a898e18eaf45",
+      "status": {
+        "state": "TASK_STATE_SUBMITTED",
+        "timestamp": "2026-10-20T17:49:51.085Z"
+      },
+      "history": [
+        {
+          "role": "ROLE_USER",
+          "parts": [
+            {
+              "text": "Please independently review requirement slugifier-deliverables revision 2 against final manifest 44f9df06530b3e24f5f32d59710b47f7a1d4796c8beb96514561a40781c85f57 and record a requirement review verdict via mesh_review. Reply when recorded.",
+              "mediaType": "text/plain"
+            }
+          ],
+          "taskId": "580a0f34-b46b-45b7-89e0-a898e18eaf45",
+          "metadata": {
+            "mesh": {
+              "kind": "review"
+            }
+          },
+          "contextId": "bf00ee43-0292-4790-801b-e3b6e75f65b0",
+          "messageId": "a2-request-review-req"
+        }
+      ],
+      "metadata": {
+        "mesh": {
+          "traceId": "544c6a91-5bba-4039-a055-e92ef52c337d",
+          "senderId": "A2",
+          "missionId": "01691e7c-e5f6-4235-9060-95b1a40f7a55",
+          "recipientId": "A1"
+        }
+      },
+      "contextId": "bf00ee43-0292-4790-801b-e3b6e75f65b0"
+    },
+    "trace_id": "544c6a91-5bba-4039-a055-e92ef52c337d",
+    "created_at": "2026-10-20T17:49:51.051Z",
+    "updated_at": "2026-10-20T17:49:51.051Z"
+  },
+  {
+    "task_id": "58c784a5-de2d-4e3f-8f06-32203dfb41af",
+    "mission_id": "01691e7c-e5f6-4235-9060-95b1a40f7a55",
+    "recipient_id": "A3",
+    "sender_id": "A2",
+    "context_id": "700bfad6-ee1e-4026-9d95-86e7070242f0",
+    "state": 1,
+    "task": {
+      "id": "58c784a5-de2d-4e3f-8f06-32203dfb41af",
+      "status": {
+        "state": "TASK_STATE_SUBMITTED",
+        "timestamp": "2026-10-20T17:49:54.756Z"
+      },
+      "history": [
+        {
+          "role": "ROLE_USER",
+          "parts": [
+            {
+              "text": "Please independently review roadmap coverage against final manifest 44f9df06530b3e24f5f32d59710b47f7a1d4796c8beb96514561a40781c85f57 and record a coverage review via mesh_review (target optional). Reply when recorded.",
+              "mediaType": "text/plain"
+            }
+          ],
+          "taskId": "58c784a5-de2d-4e3f-8f06-32203dfb41af",
+          "metadata": {
+            "mesh": {
+              "kind": "review"
+            }
+          },
+          "contextId": "700bfad6-ee1e-4026-9d95-86e7070242f0",
+          "messageId": "a2-request-review-coverage"
+        }
+      ],
+      "metadata": {
+        "mesh": {
+          "traceId": "2aeb55a8-abb3-491a-9002-d66d84dfad7a",
+          "senderId": "A2",
+          "missionId": "01691e7c-e5f6-4235-9060-95b1a40f7a55",
+          "recipientId": "A3"
+        }
+      },
+      "contextId": "700bfad6-ee1e-4026-9d95-86e7070242f0"
+    },
+    "trace_id": "2aeb55a8-abb3-491a-9002-d66d84dfad7a",
+    "created_at": "2026-10-20T17:49:54.754Z",
+    "updated_at": "2026-10-20T17:49:54.754Z"
+  }
+]

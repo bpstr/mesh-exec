@@ -79,7 +79,7 @@ Identifiers are not all interchangeable. A stable slot may have many runs; one A
 
 Trace sequence allocation locks the mission row and commits the event in that same transaction. A higher committed sequence cannot overtake a lower uncommitted sequence from another writer. This prevents the late-commit gap that a naïve independent sequence allocation can create in a polling event reader. The sequence is mission-local, and wall-clock timestamps are descriptive rather than the ordering authority.
 
-`workRevision` is separate. It advances for meaningful coordination changes, such as a newly accepted message, released claim, source change, or changed decision. Polling, trace insertion, and a transport retry alone do not create new work. This distinction keeps tracing from waking idle agents indefinitely.
+`workRevision` is separate. It advances for meaningful coordination changes, such as a newly accepted message, released claim, source change, or changed decision. Polling, trace insertion, and a transport retry alone do not create new work. This distinction keeps tracing from waking blocked agents indefinitely.
 
 ### What is captured
 
@@ -165,4 +165,4 @@ For duplicate-looking messages, compare `messageId`, `taskId`, outbox attempt ID
 
 For a failed completion attempt, inspect its operation ID and `completion.proposal.*` events, the current requirement/coverage evidence, unhandled mail, open consultations, and verification logs. Completion failure and budget exhaustion remain recorded outcomes rather than being converted into success.
 
-For a parked population, check the semantic revision and pending messages before interpreting low CPU usage as a failure. A run that cannot find independent work should park. Source-publication or process-recovery quarantine needs investigation before new writers can be admitted.
+For a parked population, check the semantic revision and pending messages before interpreting low CPU usage as a failure. Blocked runs park; an idle exit starts a fresh generation while admission remains open. Source-publication or process-recovery quarantine needs investigation before new writers can be admitted.

@@ -1,0 +1,17 @@
+{
+  "checks": {
+    "missionCompleted": true,
+    "fiveFirstGenerationRuns": true,
+    "acceptanceBeforeEveryProcessEnd": true,
+    "insideFiveMinutes": true,
+    "noToolCallCeiling": true,
+    "allMessagesHandled": true,
+    "allConsultationsTerminal": true,
+    "inputsUnchanged": true,
+    "noNativeActions": true
+  },
+  "passed": true,
+  "terminalUsageReceipts": 0,
+  "usageComplete": false,
+  "missingFinalHandoffs": 5
+}

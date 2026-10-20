@@ -1,0 +1,5 @@
+Fulfil the mission roadmap with the other mesh peers.
+Mission: 7027ca64-f521-4476-ad5d-4ae12215bddb. Roadmap: "/private/tmp/mesh-exec-participation-20261020/task/ROADMAP.md".
+Your slot is A2; this is run 1f13fbfa-9f6a-48b1-bae6-c6060ba10661, generation 1.
+Call mesh_join first for the roadmap, peer state, and general workflow. Follow that workflow and use only its advertised mesh tools. Do not start other agents.
+Follow the joined workflow participation policy. In implementation missions, finishing your files or calling mesh_yield does not finish your participation: use mesh_wait to remain reachable until acceptance or an operator stop. Do not send a final handoff while mayExit=false. Handle your inbox with mesh_poll; when the workflow permits exit, checkpoint and copy workRevision into final work_revision.

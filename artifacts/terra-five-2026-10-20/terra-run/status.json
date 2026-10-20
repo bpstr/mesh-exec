@@ -1,0 +1,137 @@
+{
+  "mission": {
+    "id": "01691e7c-e5f6-4235-9060-95b1a40f7a55",
+    "repo": "/private/tmp/mesh-exec-terra-five-20261020/task",
+    "roadmap_path": "/private/tmp/mesh-exec-terra-five-20261020/task/ROADMAP.md",
+    "roadmap_hash": "19507e02bcd32a904b1224298c2d24119b7260ef2999e1c4502dc668d10ad8f7",
+    "state": "resource-limit",
+    "revision": "28",
+    "config": {
+      "agents": 5,
+      "workflow": "implementation",
+      "verification": [
+        [
+          "/Users/bpstr/.nvm/versions/node/v24.19.0/bin/node",
+          "--test",
+          "slugify.test.mjs"
+        ]
+      ]
+    },
+    "created_at": "2026-10-20T17:48:29.300Z",
+    "updated_at": "2026-10-20T17:51:51.224Z",
+    "acceptance": null
+  },
+  "runs": [
+    {
+      "state": "exited",
+      "count": 5
+    }
+  ],
+  "slots": [
+    {
+      "id": "A1",
+      "generation": 1,
+      "state": "parked",
+      "active_run_id": null,
+      "handoff": {
+        "outcome": "idle",
+        "summary": "Implemented `cli.mjs` and verified its syntax. It handles joined arguments, newline output, and no-argument usage/error behavior. End-to-end validation awaits peer implementation of `slugify.mjs` and the shared tests.",
+        "waiting_on": [
+          "slugify.mjs implementation",
+          "shared end-to-end test result"
+        ],
+        "checkpoint_id": "b0de9e6f-699e-4d17-ad4f-181a7ca642cb",
+        "work_revision": "10"
+      }
+    },
+    {
+      "id": "A2",
+      "generation": 1,
+      "state": "parked",
+      "active_run_id": null,
+      "handoff": {
+        "outcome": "idle",
+        "summary": "Implementation and 6/6 tests are complete. Awaiting A1’s requirement review and A3’s coverage review before final acceptance.",
+        "waiting_on": [
+          "A1 requirement review",
+          "A3 coverage review"
+        ],
+        "checkpoint_id": "055b8acb-4ed8-49f8-9db6-89e0dfdae2f9",
+        "work_revision": "25"
+      }
+    },
+    {
+      "id": "A3",
+      "generation": 1,
+      "state": "parked",
+      "active_run_id": null,
+      "handoff": {
+        "outcome": "idle",
+        "summary": "Added README.md with API, examples, CLI usage, and test instructions. Checkpoint recorded; claim released.",
+        "waiting_on": [
+          "peer implementation, tests, and requirement/review coordination"
+        ],
+        "checkpoint_id": "c5e29388-11d2-487e-a76a-6e74536e87bb",
+        "work_revision": "7"
+      }
+    },
+    {
+      "id": "A4",
+      "generation": 1,
+      "state": "parked",
+      "active_run_id": null,
+      "handoff": {
+        "outcome": "idle",
+        "summary": "Implemented and locally verified `slugify.mjs`; checkpoint recorded. Yielded for shared integration and final tests.",
+        "waiting_on": [
+          "Shared test suite and integration acceptance"
+        ],
+        "checkpoint_id": "0978167f-78bc-4391-8e36-bc342b60b9ed",
+        "work_revision": "18"
+      }
+    },
+    {
+      "id": "A5",
+      "generation": 1,
+      "state": "parked",
+      "active_run_id": null,
+      "handoff": {
+        "outcome": "idle",
+        "summary": "Added slugify.test.mjs and verified `npm test`: 6 passed, 0 failed. Checkpoint: a4da5cc2-d303-4eca-8123-6a113c78811f.",
+        "waiting_on": [],
+        "checkpoint_id": "a4da5cc2-d303-4eca-8123-6a113c78811f",
+        "work_revision": "21"
+      }
+    }
+  ],
+  "requirements": [
+    {
+      "state": "implemented",
+      "count": 1
+    }
+  ],
+  "messages": {
+    "total": 2,
+    "pending": 2,
+    "oldest_pending_seconds": "133.875644"
+  },
+  "outbox": [
+    {
+      "state": "delivered",
+      "count": 2,
+      "attempts": 2
+    }
+  ],
+  "operations": [
+    {
+      "kind": "command",
+      "state": "succeeded",
+      "count": 4
+    },
+    {
+      "kind": "patch",
+      "state": "applied",
+      "count": 4
+    }
+  ]
+}

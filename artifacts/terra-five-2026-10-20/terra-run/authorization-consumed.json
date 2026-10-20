@@ -1,0 +1,14 @@
+{
+  "model": "gpt-5.6-terra",
+  "agents": 5,
+  "maxLaunches": 5,
+  "maxToolCalls": 100,
+  "maxElapsedMs": 300000,
+  "replacements": false,
+  "retries": false,
+  "stop": "mission completion, first provider error, 100 admitted mesh tool calls, or five-minute cutoff",
+  "authorization": "User requested rerunning the original task with five Terra agents and five minutes. Five launches, no replacements/provider retries; retain the previous implementation-run 100-mesh-call ceiling. Stop on completion, first provider error, or any cap.",
+  "startedAt": "2026-10-20T17:48:28.809Z",
+  "runnerCommit": "9ed4a6524309cecf72756a8af5ae372296ce7e9a",
+  "codexVersion": "codex-cli 0.160.0"
+}

@@ -655,10 +655,20 @@ export class Store {
       invariant(r.rowCount, 'STALE_DEPENDENCY', `Decision ${id} changed or became stale`);
     }
   }
-  async board(p: Principal, query?: string): Promise<unknown> {
+  async board(
+    p: Principal,
+    query?: string,
+    page: { knowledgeLimit?: number; knowledgeCursor?: { updatedAt: string; id: string } } = {},
+  ): Promise<unknown> {
     await this.assertActive(p, this.db, true);
+    const limit = page.knowledgeLimit ?? 50;
+    invariant(
+      Number.isInteger(limit) && limit >= 1 && limit <= 100,
+      'INVALID_LIMIT',
+      'knowledgeLimit must be between 1 and 100',
+    );
     const m = await this.mission(p.missionId);
-    const [requirements, intentions, claims, knowledge, peers] = await Promise.all([
+    const [requirements, intentions, claims, knowledge, peers, summary] = await Promise.all([
       this.db.query('SELECT * FROM requirements WHERE mission_id=$1 ORDER BY id LIMIT 200', [
         p.missionId,
       ]),
@@ -669,20 +679,39 @@ export class Store {
         "SELECT * FROM claims WHERE mission_id=$1 AND state IN ('held','quarantined') LIMIT 200",
         [p.missionId],
       ),
-      query
-        ? this.db.query(
-            `SELECT * FROM knowledge WHERE mission_id=$1 AND to_tsvector('english',title||' '||body) @@ plainto_tsquery('english',$2) ORDER BY updated_at DESC LIMIT 50`,
-            [p.missionId, query],
-          )
-        : this.db.query(
-            'SELECT * FROM knowledge WHERE mission_id=$1 ORDER BY updated_at DESC LIMIT 50',
-            [p.missionId],
-          ),
+      this.db.query(
+        `SELECT *, updated_at::text AS cursor_time FROM knowledge WHERE mission_id=$1
+         AND ($2::text IS NULL OR to_tsvector('english',title||' '||body) @@ plainto_tsquery('english',$2))
+         AND ($3::timestamptz IS NULL OR (updated_at,id) < ($3::timestamptz,$4::text))
+         ORDER BY updated_at DESC,id DESC LIMIT $5`,
+        [
+          p.missionId,
+          query || null,
+          page.knowledgeCursor?.updatedAt ?? null,
+          page.knowledgeCursor?.id ?? null,
+          limit + 1,
+        ],
+      ),
       this.db.query(
         'SELECT id,generation,state,handoff FROM slots WHERE mission_id=$1 ORDER BY id',
         [p.missionId],
       ),
+      this.db.query(
+        `SELECT count(*) AS total,
+         count(*) FILTER (WHERE kind='finding') AS findings,
+         count(*) FILTER (WHERE kind='decision') AS decisions,
+         count(*) FILTER (WHERE kind='offer') AS offers,
+         count(*) FILTER (WHERE kind='blocker') AS blockers,
+         count(*) FILTER (WHERE status='resolved') AS resolved,
+         count(*) FILTER (WHERE freshness='stale') AS stale
+         FROM knowledge WHERE mission_id=$1
+         AND ($2::text IS NULL OR to_tsvector('english',title||' '||body) @@ plainto_tsquery('english',$2))`,
+        [p.missionId, query || null],
+      ),
     ]);
+    const entries = knowledge.rows.slice(0, limit);
+    const hasMore = knowledge.rows.length > limit;
+    const last = entries.at(-1);
     await this.observed(p, String(m.revision));
     return {
       mission: {
@@ -695,7 +724,15 @@ export class Store {
       requirements: requirements.rows,
       intentions: intentions.rows,
       claims: claims.rows,
-      knowledge: knowledge.rows,
+      knowledge: entries.map(({ cursor_time, ...entry }) => entry),
+      knowledgePage: {
+        limit,
+        hasMore,
+        nextCursor: hasMore && last ? { updatedAt: last.cursor_time, id: last.id } : null,
+        summary: Object.fromEntries(
+          Object.entries(summary.rows[0]).map(([key, value]) => [key, Number(value)]),
+        ),
+      },
       peers: peers.rows,
     };
   }

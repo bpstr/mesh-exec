@@ -1,0 +1,62 @@
+[
+  {
+    "id": "e473c9d6-5d7e-4d7b-b69e-45bb38478742",
+    "agent_id": "A1",
+    "generation": 1,
+    "state": "aborted",
+    "started_at": "2026-10-20T18:04:09.499Z",
+    "ended_at": "2026-10-20T18:06:10.222Z",
+    "reason": "aborted",
+    "handoff": null,
+    "result": null,
+    "log_dir": "/private/tmp/mesh-exec-participation-20261020/runtime/runs/7027ca64-f521-4476-ad5d-4ae12215bddb/A1/e473c9d6-5d7e-4d7b-b69e-45bb38478742"
+  },
+  {
+    "id": "a35af0d2-9e18-4578-9329-973fd1875296",
+    "agent_id": "A3",
+    "generation": 1,
+    "state": "aborted",
+    "started_at": "2026-10-20T18:04:09.509Z",
+    "ended_at": "2026-10-20T18:06:10.204Z",
+    "reason": "aborted",
+    "handoff": null,
+    "result": null,
+    "log_dir": "/private/tmp/mesh-exec-participation-20261020/runtime/runs/7027ca64-f521-4476-ad5d-4ae12215bddb/A3/a35af0d2-9e18-4578-9329-973fd1875296"
+  },
+  {
+    "id": "1f13fbfa-9f6a-48b1-bae6-c6060ba10661",
+    "agent_id": "A2",
+    "generation": 1,
+    "state": "aborted",
+    "started_at": "2026-10-20T18:04:09.509Z",
+    "ended_at": "2026-10-20T18:06:10.222Z",
+    "reason": "aborted",
+    "handoff": null,
+    "result": null,
+    "log_dir": "/private/tmp/mesh-exec-participation-20261020/runtime/runs/7027ca64-f521-4476-ad5d-4ae12215bddb/A2/1f13fbfa-9f6a-48b1-bae6-c6060ba10661"
+  },
+  {
+    "id": "09dce569-dc67-42c0-a4ed-9d96b67db062",
+    "agent_id": "A4",
+    "generation": 1,
+    "state": "aborted",
+    "started_at": "2026-10-20T18:04:09.510Z",
+    "ended_at": "2026-10-20T18:06:10.215Z",
+    "reason": "aborted",
+    "handoff": null,
+    "result": null,
+    "log_dir": "/private/tmp/mesh-exec-participation-20261020/runtime/runs/7027ca64-f521-4476-ad5d-4ae12215bddb/A4/09dce569-dc67-42c0-a4ed-9d96b67db062"
+  },
+  {
+    "id": "0013bc0a-32ac-4af7-b3a6-598fd46984d3",
+    "agent_id": "A5",
+    "generation": 1,
+    "state": "aborted",
+    "started_at": "2026-10-20T18:04:09.513Z",
+    "ended_at": "2026-10-20T18:06:10.219Z",
+    "reason": "aborted",
+    "handoff": null,
+    "result": null,
+    "log_dir": "/private/tmp/mesh-exec-participation-20261020/runtime/runs/7027ca64-f521-4476-ad5d-4ae12215bddb/A5/0013bc0a-32ac-4af7-b3a6-598fd46984d3"
+  }
+]

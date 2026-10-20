@@ -813,7 +813,7 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
         continue;
       }
       failures = 0;
-      if (end.result && ['idle', 'blocked', 'completion_proposed'].includes(end.result.outcome)) {
+      if (end.result && ['blocked', 'completion_proposed'].includes(end.result.outcome)) {
         // The cursor came from mesh_yield; do not replace it with a later snapshot.
         const revision = end.result.work_revision ?? observed.workRevision;
         await emit({

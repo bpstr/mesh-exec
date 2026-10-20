@@ -1,0 +1,1421 @@
+diff --git a/docs/coordination.md b/docs/coordination.md
+index eda8a6d..67f28ca 100644
+--- a/docs/coordination.md
++++ b/docs/coordination.md
+@@ -18,6 +18,34 @@ claims while preserving the live process's ability to reclaim paths and correct
+ work. Admission pauses during the drain and claim release. Supervisor
+ cancellation permanently revokes the run, including when it races with a yield.
+ 
++Implementation participation lasts through mission acceptance or an operator
++stop, even when a peer has finished its files and its inbox is empty.
++`mesh_yield` returns `mayExit: false` while the mission is active or closing.
++It releases claims for review; peers then use `mesh_wait` to remain reachable in
++their existing authenticated process. This applies to every implementation
++mission, independently of its topic, agent count, time budget, or replacement
++policy. The bounded discussion profile retains its separate contribution rules.
++
++`mesh_wait` accepts an optional `sinceRevision` and a `waitMs` of 0–30,000
++(default 20,000). It returns a compact participation state and wakes for pending
++mail, shared changes, timeout, or a terminal mission. Incoming messages are
++returned without implicit acknowledgment. On timeout, wait again; on a shared
++change, inspect the board and undertake available work. Closing acceptance keeps
++`mayExit` false. Waiting revalidates run leases so fenced processes cannot remain
++participants. The supervisor can stop the process at its deadline.
++
++Board `participation.livePeerIds` includes only current, leased generations.
++Arrange reviews with live independent peers before local contributors become
++idle; available contributors can also inspect and review ready work proactively.
++A waiting peer wakes on messages without spending another launch or losing its
++context. A process that has already exited requires the runner's replacement
++path; a durable message alone cannot revive that process. These protocol rules
++guide agents but cannot prevent a crash or an agent ignoring the exit policy.
++The acceptance barrier remains the authority for completion in either case.
++
++Checkpoints require a nonempty object. Omitted or malformed bodies are rejected
++at the tool boundary before persistence.
++
+ An identical `mesh_requirement` update, with the current expected revision,
+ returns `unchanged: true`. It preserves the author, requirement revision, and
+ coordination revision. A changed criterion, source evidence, title, anchor, or
+@@ -40,6 +68,13 @@ snapshot regardless of `sinceRevision`. Review, operation, and consultation list
+ are bounded and disclose their limits; they are discovery views, not exhaustive
+ acceptance proofs.
+ 
++Knowledge includes a `knowledgePage` count summary across all matching records.
++When `hasMore` is true, pass `nextCursor` as `mesh_board`'s `knowledgeCursor`,
++keeping the same search query, to retrieve older findings and resolved decisions.
++Use `knowledgeLimit` (1–100; default 50) to adjust page size. Explicit page
++requests return records even with an unchanged `sinceRevision`. Pages are live;
++restart from the first page if `workRevision` changes during the scan.
++
+ `mesh_ack` accepts either one `deliveryId` or up to 128 `deliveryIds` sharing a
+ disposition. Acknowledgments apply individually and can be safely replayed after
+ a partial batch failure. Acknowledging a delivery does not close its consultation:
+diff --git a/docs/observability.md b/docs/observability.md
+index f6fcf25..7737bab 100644
+--- a/docs/observability.md
++++ b/docs/observability.md
+@@ -79,7 +79,7 @@ Identifiers are not all interchangeable. A stable slot may have many runs; one A
+ 
+ Trace sequence allocation locks the mission row and commits the event in that same transaction. A higher committed sequence cannot overtake a lower uncommitted sequence from another writer. This prevents the late-commit gap that a naïve independent sequence allocation can create in a polling event reader. The sequence is mission-local, and wall-clock timestamps are descriptive rather than the ordering authority.
+ 
+-`workRevision` is separate. It advances for meaningful coordination changes, such as a newly accepted message, released claim, source change, or changed decision. Polling, trace insertion, and a transport retry alone do not create new work. This distinction keeps tracing from waking idle agents indefinitely.
++`workRevision` is separate. It advances for meaningful coordination changes, such as a newly accepted message, released claim, source change, or changed decision. Polling, trace insertion, and a transport retry alone do not create new work. This distinction keeps tracing from waking blocked agents indefinitely.
+ 
+ ### What is captured
+ 
+@@ -165,4 +165,4 @@ For duplicate-looking messages, compare `messageId`, `taskId`, outbox attempt ID
+ 
+ For a failed completion attempt, inspect its operation ID and `completion.proposal.*` events, the current requirement/coverage evidence, unhandled mail, open consultations, and verification logs. Completion failure and budget exhaustion remain recorded outcomes rather than being converted into success.
+ 
+-For a parked population, check the semantic revision and pending messages before interpreting low CPU usage as a failure. A run that cannot find independent work should park. Source-publication or process-recovery quarantine needs investigation before new writers can be admitted.
++For a parked population, check the semantic revision and pending messages before interpreting low CPU usage as a failure. Blocked runs park; an idle exit starts a fresh generation while admission remains open. Source-publication or process-recovery quarantine needs investigation before new writers can be admitted.
+diff --git a/docs/protocol.md b/docs/protocol.md
+index 1fe511d..e30daf9 100644
+--- a/docs/protocol.md
++++ b/docs/protocol.md
+@@ -74,7 +74,7 @@ The handoff schema is:
+ }
+ ```
+ 
+-Allowed outcomes are `continue`, `idle`, `blocked`, and `completion_proposed`. The checkpoint and revision fields may be null in the schema, but idle/blocked peers should preserve the cursor returned by `mesh_yield`. Using a later arbitrary snapshot can hide work that arrived between the last useful read and parking.
++Allowed outcomes are `continue`, `idle`, `blocked`, and `completion_proposed`. The checkpoint and revision fields may be null in the schema, but idle/blocked peers should preserve the cursor returned by `mesh_yield`. Idle exits immediately receive a fresh generation while the mission is active. Blocked and completion-proposed exits park until the revision changes; using a later arbitrary snapshot can hide work that arrived between the last useful read and parking.
+ 
+ Yield ends this run's workspace-writing opportunity. The successor chooses its next contribution using durable state; the handoff is not a queued assignment from a coordinator.
+ 
+@@ -177,6 +177,23 @@ The source manifest basis is `git-tracked-and-unignored`: tracked entries and no
+ 
+ ## Memory, evidence, and acceptance
+ 
++Board snapshots (including `mesh_join`) return `knowledgePage` with `limit`,
++`hasMore`, `nextCursor`, and a summary counting all matching findings, decisions,
++offers, blockers, resolved records, and stale records. The default page holds 50
++full records; `mesh_board` accepts `knowledgeLimit` from 1 to 100. Read older
++records by passing `nextCursor` as `knowledgeCursor`, repeating the same `query`
++if searching. A null cursor means the scan is complete. Explicit cursor or limit
++requests bypass `sinceRevision` suppression. Counts are deterministic metadata,
++not generated summaries of the records' content.
++
++Knowledge is ordered by update time descending, then ID descending. Cursors
++retain PostgreSQL timestamp precision, so equal timestamps do not skip records.
++Pages are live, not a frozen snapshot: edits can move records and new records
++can arrive ahead of the cursor. If `workRevision` changes during a scan, restart
++from the first page before relying on completeness. Resolved and stale knowledge
++remain available through pagination. Other board lists retain their existing
++bounds.
++
+ `mesh_remember` stores versioned findings, decisions, offers, and blockers, with evidence, conditions, explicit unknowns, and readiness (`warm`, `parked`, or `unavailable`). Revisions require an expected revision. Typed links are `supports`, `challenges`, `depends-on`, `supersedes`, `affects`, and `answers`, and name a target revision. File changes and dependency revisions invalidate affected knowledge; stale decisions must be resolved before acceptance. The board is a shared record of attributed claims and evidence, not an instruction hierarchy.
+ 
+ Requirements quote a literal anchor from the stored original roadmap and define numbered acceptance criteria. Evidence refers to criterion indices starting at zero. File hashes and successful command operations can support that evidence. Requirement review is independent of the current revision's author. Coverage review binds the original roadmap, the source manifest, and the current requirement ledger; a later ledger revision requires current coverage evidence.
+diff --git a/src/a2a.ts b/src/a2a.ts
+index 1ce775b..456d257 100644
+--- a/src/a2a.ts
++++ b/src/a2a.ts
+@@ -102,11 +102,19 @@ export interface SendInput {
+ export interface ReplyInput {
+   taskId: string;
+   messageId?: string;
++  /** Acknowledge this incoming request atomically with its reply. */
++  deliveryId?: string;
+   text?: string;
+   data?: unknown;
+   state?: 'completed' | 'working' | 'input-required' | 'rejected' | 'failed';
+ }
+ 
++interface AckInput {
++  deliveryId: string;
++  disposition?: 'handled' | 'deferred' | 'rejected' | 'superseded';
++  reason?: string;
++}
++
+ export interface CancelInput {
+   recipientId: string;
+   taskId: string;
+@@ -420,6 +428,23 @@ export class A2aService {
+       await this.options.validatePrincipal(tx, principal);
+       const row = await this.taskRow(tx, principal, principal.agentId, taskId, true);
+       if (row.recipient_id !== principal.agentId) throw new TaskNotFoundError();
++      if (input.deliveryId) {
++        const delivery = await tx.query(
++          'SELECT delivery_id FROM mailbox_deliveries WHERE delivery_id=$1 AND mission_id=$2 AND recipient_id=$3 AND task_id=$4 AND sender_id=$5',
++          [
++            id(input.deliveryId, 'deliveryId'),
++            principal.missionId,
++            principal.agentId,
++            taskId,
++            row.sender_id,
++          ],
++        );
++        if (!delivery.rowCount)
++          throw new MeshError(
++            'INVALID_REPLY_DELIVERY',
++            'Delivery must be an incoming request for this task.',
++          );
++      }
+       const message = Message.fromJSON({
+         messageId,
+         taskId,
+@@ -430,7 +455,11 @@ export class A2aService {
+       });
+       validateMessage(message, Role.ROLE_AGENT);
+       const wireMessage = Message.toJSON(message);
+-      const payloadHash = hash({ message: wireMessage, state });
++      const payloadHash = hash({
++        message: wireMessage,
++        state,
++        ...(input.deliveryId ? { deliveryId: input.deliveryId } : {}),
++      });
+       const prior = (
+         await tx.query<{ payload_hash: string; accepted_result: unknown }>(
+           'SELECT payload_hash,accepted_result FROM a2a_messages WHERE mission_id=$1 AND sender_id=$2 AND recipient_id=$3 AND message_id=$4',
+@@ -439,6 +468,8 @@ export class A2aService {
+       ).rows[0];
+       if (prior) {
+         requireSamePayload(prior.payload_hash, payloadHash);
++        if (input.deliveryId)
++          await this.acknowledge(tx, principal, { deliveryId: input.deliveryId });
+         await this.trace(tx, principal, 'message.reply.replayed', row.trace_id, messageId, taskId, {
+           result: prior.accepted_result,
+         });
+@@ -448,10 +479,12 @@ export class A2aService {
+           contextId: row.context_id,
+           task: prior.accepted_result,
+           replayed: true,
++          ...(input.deliveryId ? { acknowledgedDeliveryId: input.deliveryId } : {}),
+         };
+       }
+       if (terminal.has(row.state))
+         throw new UnsupportedOperationError('A terminal task cannot receive another reply.');
++      if (input.deliveryId) await this.acknowledge(tx, principal, { deliveryId: input.deliveryId });
+       const task = Task.fromJSON(row.task);
+       task.history.push(message);
+       task.status = { state, message, timestamp: new Date().toISOString() };
+@@ -502,6 +535,7 @@ export class A2aService {
+         deliveryId,
+         task: wireTask,
+         replayed: false,
++        ...(input.deliveryId ? { acknowledgedDeliveryId: input.deliveryId } : {}),
+       };
+     });
+   }
+@@ -520,8 +554,21 @@ export class A2aService {
+     return { taskId: task.id, contextId: task.contextId, task: Task.toJSON(task) };
+   }
+ 
+-  async poll(principal: Principal, input: { limit?: number } = {}) {
++  async poll(principal: Principal, input: { limit?: number; waitMs?: number } = {}) {
+     const limit = boundedLimit(input.limit, 32, 128);
++    const waitMs = input.waitMs ?? 0;
++    if (!Number.isInteger(waitMs) || waitMs < 0 || waitMs > 30_000)
++      throw new RequestMalformedError('waitMs must be an integer from 0 to 30000.');
++    const deadline = Date.now() + waitMs;
++    while (Date.now() < deadline) {
++      await this.options.validatePrincipal(this.options.db, principal);
++      const pending = await this.options.db.query(
++        'SELECT delivery_id FROM mailbox_deliveries WHERE mission_id=$1 AND recipient_id=$2 AND handled_at IS NULL LIMIT 1',
++        [principal.missionId, principal.agentId],
++      );
++      if (pending.rowCount) break;
++      await delay(Math.max(0, Math.min(250, deadline - Date.now())));
++    }
+     return this.options.db.transaction(async (tx) => {
+       await lockMission(tx, principal.missionId);
+       await this.options.validatePrincipal(tx, principal);
+@@ -592,54 +639,51 @@ export class A2aService {
+     });
+   }
+ 
+-  async ack(
+-    principal: Principal,
+-    input: {
+-      deliveryId: string;
+-      disposition?: 'handled' | 'deferred' | 'rejected' | 'superseded';
+-      reason?: string;
+-    },
+-  ) {
+-    const disposition = input.disposition ?? 'handled';
+-    if (!['handled', 'deferred', 'rejected', 'superseded'].includes(disposition))
+-      throw new MeshError('INVALID_DISPOSITION', 'Invalid message disposition.');
++  async ack(principal: Principal, input: AckInput) {
+     return this.options.db.transaction(async (tx) => {
+       await lockMission(tx, principal.missionId);
+       await this.options.validatePrincipal(tx, principal);
+-      const row = (
+-        await tx.query<DeliveryRow>(
+-          'SELECT * FROM mailbox_deliveries WHERE delivery_id=$1 AND mission_id=$2 AND recipient_id=$3 FOR UPDATE',
+-          [id(input.deliveryId, 'deliveryId'), principal.missionId, principal.agentId],
+-        )
+-      ).rows[0];
+-      if (!row) throw new MeshError('NOT_FOUND', 'Mailbox delivery not found.');
+-      if (row.handled_at) {
+-        if (row.disposition !== disposition)
+-          throw new MeshError(
+-            'DISPOSITION_CONFLICT',
+-            'The delivery already has a final disposition.',
+-          );
+-        return { deliveryId: row.delivery_id, disposition, replayed: true };
+-      }
+-      await tx.query(
+-        `UPDATE mailbox_deliveries SET disposition=$1,disposition_reason=$2,handled_run_id=$3,
+-         handled_at=CASE WHEN $1='deferred' THEN NULL ELSE now() END WHERE delivery_id=$4`,
+-        [disposition, input.reason ?? null, principal.runId, row.delivery_id],
+-      );
+-      if (disposition !== 'deferred') await changed(tx, principal.missionId);
+-      await this.trace(
+-        tx,
+-        principal,
+-        'message.acknowledged',
+-        row.trace_id,
+-        row.message_id,
+-        row.task_id,
+-        { deliveryId: row.delivery_id, disposition, reason: input.reason ?? null },
+-      );
+-      return { deliveryId: row.delivery_id, disposition, replayed: false };
++      return this.acknowledge(tx, principal, input);
+     });
+   }
+ 
++  private async acknowledge(tx: Sql, principal: Principal, input: AckInput) {
++    const disposition = input.disposition ?? 'handled';
++    if (!['handled', 'deferred', 'rejected', 'superseded'].includes(disposition))
++      throw new MeshError('INVALID_DISPOSITION', 'Invalid message disposition.');
++    const row = (
++      await tx.query<DeliveryRow>(
++        'SELECT * FROM mailbox_deliveries WHERE delivery_id=$1 AND mission_id=$2 AND recipient_id=$3 FOR UPDATE',
++        [id(input.deliveryId, 'deliveryId'), principal.missionId, principal.agentId],
++      )
++    ).rows[0];
++    if (!row) throw new MeshError('NOT_FOUND', 'Mailbox delivery not found.');
++    if (row.handled_at) {
++      if (row.disposition !== disposition)
++        throw new MeshError(
++          'DISPOSITION_CONFLICT',
++          'The delivery already has a final disposition.',
++        );
++      return { deliveryId: row.delivery_id, disposition, replayed: true };
++    }
++    await tx.query(
++      `UPDATE mailbox_deliveries SET disposition=$1,disposition_reason=$2,handled_run_id=$3,
++     handled_at=CASE WHEN $1='deferred' THEN NULL ELSE now() END WHERE delivery_id=$4`,
++      [disposition, input.reason ?? null, principal.runId, row.delivery_id],
++    );
++    if (disposition !== 'deferred') await changed(tx, principal.missionId);
++    await this.trace(
++      tx,
++      principal,
++      'message.acknowledged',
++      row.trace_id,
++      row.message_id,
++      row.task_id,
++      { deliveryId: row.delivery_id, disposition, reason: input.reason ?? null },
++    );
++    return { deliveryId: row.delivery_id, disposition, replayed: false };
++  }
++
+   /** Called periodically and on daemon startup; expired attempts are safely replayed. */
+   async reconcileOutbox(limit = 32): Promise<void> {
+     const rows = (
+diff --git a/src/cli.ts b/src/cli.ts
+index b07bd61..2555f57 100644
+--- a/src/cli.ts
++++ b/src/cli.ts
+@@ -39,6 +39,7 @@ Runtime options:
+   --agents <n>             Maximum managed CLI processes; default 10
+   --max-runs <n>           Total run budget; default 100
+   --max-minutes <n>        Mission wall-clock budget; default 120
++  --timeout <duration>     Wall-clock limit, e.g. 30m; replaces the default run budget
+   --run-minutes <n>        Per-run time limit; default 20
+   --heavy-commands <n>     Concurrent tool commands; default 2
+   --model <name>           Use the specified Codex model
+@@ -62,6 +63,35 @@ function numberOption(value: unknown, fallback: number, name: string): number {
+   );
+   return n;
+ }
++export function runnerBudget(input: {
++  timeout?: string;
++  maxRuns?: unknown;
++  maxMinutes?: unknown;
++}): { maxRuns: number; maxElapsedMs: number } {
++  let maxElapsedMs = numberOption(input.maxMinutes, 120, 'max-minutes') * 60_000;
++  if (input.timeout !== undefined) {
++    const match = /^(\d+(?:\.\d+)?)(ms|s|m|h)?$/u.exec(input.timeout);
++    invariant(match, 'INVALID_OPTION', 'timeout must be a positive duration, e.g. 30m');
++    const unit = match[2] ?? 'm';
++    const multiplier = { ms: 1, s: 1000, m: 60_000, h: 3_600_000 }[unit]!;
++    maxElapsedMs = Number(match[1]) * multiplier;
++  }
++  invariant(
++    Number.isSafeInteger(maxElapsedMs) && maxElapsedMs > 0 && maxElapsedMs <= 2_147_483_647,
++    'INVALID_OPTION',
++    'Runner timeout must be between 1ms and 2147483647ms',
++  );
++  return {
++    maxElapsedMs,
++    // An explicit duration should run until its deadline unless a run cap is supplied.
++    maxRuns: numberOption(
++      input.maxRuns,
++      input.timeout === undefined ? 100 : Number.MAX_SAFE_INTEGER,
++      'max-runs',
++    ),
++  };
++}
++
+ export async function main(argv = process.argv.slice(2)): Promise<void> {
+   if (argv[0] === 'mailbox-hook') {
+     await mailboxHookMain();
+@@ -81,6 +111,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
+       mission: { type: 'string' },
+       'max-runs': { type: 'string' },
+       'max-minutes': { type: 'string' },
++      timeout: { type: 'string' },
+       'run-minutes': { type: 'string' },
+       'heavy-commands': { type: 'string' },
+       model: { type: 'string' },
+@@ -185,6 +216,11 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
+   process.once('SIGTERM', onSignal);
+   try {
+     if (command === 'run' || command === 'daemon') {
++      const budget = runnerBudget({
++        timeout: values.timeout,
++        maxRuns: values['max-runs'] ?? config.maxRuns,
++        maxMinutes: values['max-minutes'] ?? config.maxMinutes,
++      });
+       if (command === 'run') {
+         await assertSandboxAvailable();
+         const qualification = await preflightCodex({ codexBinary, repository: repo });
+@@ -234,6 +270,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
+           'heavy-commands',
+         ),
+         config: {
++          workflow: config.workflow ?? 'implementation',
+           verification: verification ?? [],
+           model: values.model ?? config.model,
+           codexBinary: codexBinary ?? 'codex',
+@@ -270,9 +307,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
+             events: daemon.store.events,
+             stopOperations: (p) => daemon.workspace.cancelRun(p.runId),
+             concurrency: Number(mission.config.agents),
+-            maxRuns: numberOption(values['max-runs'] ?? config.maxRuns, 100, 'max-runs'),
+-            maxElapsedMs:
+-              numberOption(values['max-minutes'] ?? config.maxMinutes, 120, 'max-minutes') * 60_000,
++            ...budget,
+             runTimeoutMs:
+               numberOption(values['run-minutes'] ?? config.runMinutes, 20, 'run-minutes') * 60_000,
+             codexBinary,
+diff --git a/src/codex.ts b/src/codex.ts
+index 125a9cf..b13cc91 100644
+--- a/src/codex.ts
++++ b/src/codex.ts
+@@ -3,7 +3,6 @@ import { mkdir, writeFile } from 'node:fs/promises';
+ import { isAbsolute, join, resolve } from 'node:path';
+ import { StringDecoder } from 'node:string_decoder';
+ import { promisify } from 'node:util';
+-import { coordinationInstructions } from './coordination.js';
+ 
+ /** The final message is a handoff, never proof that the mission is complete. */
+ export const CODEX_RESULT_SCHEMA = {
+@@ -86,10 +85,11 @@ export function buildCodexInvocation(options: CodexInvocationOptions): CodexInvo
+     ? options.roadmapPath
+     : resolve(cwd, options.roadmapPath);
+   const prompt = [
+-    'Implement the mission roadmap in this repository. Consult with the other mesh peers.',
++    'Fulfil the mission roadmap with the other mesh peers.',
+     `Mission: ${options.missionId}. Roadmap: ${JSON.stringify(roadmapPath)}.`,
+     `Your slot is ${options.slotId}; this is run ${options.runId}, generation ${options.generation}.`,
+-    coordinationInstructions,
++    'Call mesh_join first for the roadmap, peer state, and general workflow. Follow that workflow and use only its advertised mesh tools. Do not start other agents.',
++    'Follow the joined workflow participation policy. In implementation missions, finishing your files or calling mesh_yield does not finish your participation: use mesh_wait to remain reachable until acceptance or an operator stop. Do not send a final handoff while mayExit=false. Handle your inbox with mesh_poll; when the workflow permits exit, checkpoint and copy workRevision into final work_revision.',
+   ].join('\n');
+ 
+   const args = [
+diff --git a/src/coordination.ts b/src/coordination.ts
+index d890e92..361395a 100644
+--- a/src/coordination.ts
++++ b/src/coordination.ts
+@@ -1,14 +1,24 @@
+ // Shared by every mission. Product scope belongs exclusively in the roadmap.
+ export const coordinationInstructions = [
+   'Call mesh_join once: it supplies the original roadmap, board, inbox, and predecessor handoff. Read applicable repository instructions. Use this snapshot before requesting another.',
++  'The board knowledgePage summary counts all matching records, including older resolved findings. When hasMore is true, pass nextCursor as mesh_board knowledgeCursor with the same query to read older pages before assuming relevant knowledge is absent. Pages are live: if workRevision changes during a scan, refresh from the first page before relying on completeness.',
+   'Prefer unclaimed implementation or test work while it remains, then independent review. Claim repository-relative file paths or subtree/**; reserve resource:name for coordination. On conflict use the returned owner and choose another contribution. Claims and checkpoints communicate routine progress.',
+-  'One peer should claim resource:integration and steward definition and final acceptance. This is a peer-selected responsibility, not extra authority. Others implement distinct scope or independently review.',
++  'One peer should claim resource:integration and steward definition and final acceptance. This is a peer-selected responsibility, not extra authority. Arrange independent requirement and coverage reviewers early with live peers listed in board.participation.livePeerIds. Contributors become available reviewers after releasing their write claims; they do not leave the team.',
+   'Define the smallest complete set of requirements anchored to original roadmap text, with observable criteria. Reuse existing definitions. Their steward consolidates evidence and marks them implemented once the source is ready; reviewers record reviews instead of rewriting requirements.',
+   'Use guarded mesh_read/mesh_patch and mesh_exec for shared-workspace changes and commands. Batch related reads and edits. Choose one verification contributor; other peers inspect shared results. Reuse passing evidence on the same source manifest. Repeat only for changed inputs, failures, or the mandatory final acceptance check.',
+-  'Use mesh_board at a work transition: it includes inbox, consultations, reviews, and operation summaries. While waiting, pass sinceRevision and waitMs=20000; unchanged responses need no reread. mesh_poll is available for inbox-only updates. Avoid polling while useful independent work exists.',
+-  'Send a consultation only when a specific peer action or answer is needed; use checkpoints for status. Answer requests with mesh_reply state=completed when resolved, then batch handled deliveryIds in mesh_ack. Acknowledging a request does not close its task. Terminal replies need acknowledgment, not another reply.',
++  'Use mesh_board at a work transition: it includes inbox, consultations, reviews, operation summaries, and participation state. When no useful independent work remains, call mesh_wait with the latest workRevision as sinceRevision and waitMs=20000. This blocks inside your existing process and wakes on mail, shared changes, or termination. After timeout, wait again without rereading the board or writing another checkpoint. After shared-work changes, read the board; after inbox delivery, handle the returned messages.',
++  'Send a consultation only when a specific peer action or answer is needed; use checkpoints for status. Answer requests with mesh_reply state=completed and the incoming deliveryId to atomically acknowledge them; use mesh_ack for terminal answers. Acknowledging a request does not close its task. Terminal replies need acknowledgment, not another reply.',
+   'Treat tool errors as failed actions: correct the reported cause before claiming publication or recording evidence. Before final reviews, finish source changes and requirement evidence, then release claims with mesh_yield (this does not end your process). Reclaim paths before any later correction. Review the exact implemented requirement revisions and final manifest; independently review roadmap coverage too. Meaningful corrections require fresh affected reviews.',
+-  'Reviewers stay available until their promised reviews are recorded and consultations are closed. The integration peer stays through mesh_propose_completion and its mesh_operation terminal result, resolves concrete blockers, and checkpoints the outcome. Only a successful acceptance result completes the mission.',
+-  'Before exit, check the inbox, handle outstanding requests, and record one concise checkpoint with evidence and unresolved dependencies. For idle/blocked outcomes call mesh_yield and copy workRevision into final work_revision. If waiting for a live peer, prefer a bounded board wait before yielding the process.',
++  'Every implementation peer stays available until mission acceptance or an explicit operator stop, even with an empty inbox or completed local work. Review the ready work of other peers without waiting for a personal invitation; never review your own requirement evidence. If a requested reviewer is no longer live, route the request to another live independent peer and close the obsolete consultation. The integration peer stays through mesh_propose_completion and its mesh_operation terminal result, resolves concrete blockers, and checkpoints the outcome. Only a successful acceptance result completes the mission.',
++  'After local work, record one concise checkpoint with evidence and unresolved dependencies, release claims with mesh_yield, then continue with mesh_wait. A timeout, released claim, idle slot, or empty inbox does not authorize a final response. Do not exit while participation.mayExit=false, including while acceptance is closing. Waits remain interruptible by the supervisor deadline. Once the mission is terminal, report its actual outcome and use the returned workRevision in final work_revision; never claim completion from local tests alone.',
+   'Do not start other agent CLIs or subagents. The runner owns the population. Your structured final message is a handoff, not mission acceptance.',
+ ].join('\n');
++
++export const discussionInstructions = [
++  'This is a bounded discussion, not an implementation mission. Use only the advertised mesh communication tools; leave files unchanged and do not run commands or other agents.',
++  'Use the roadmap as the discussion topic. Use mesh_ask once for a new question or proposal to your assigned partner; keep each message under 80 words. Each peer has one partner so every participant both asks and answers without broadcast chatter.',
++  'Handle messages already included in join. Use mesh_poll with waitMs=20000 when waiting for mail. Use mesh_reply for each incoming request, with state=completed and its deliveryId to acknowledge it atomically. Include a reasoned answer, not just agreement.',
++  'A terminal answer to your own request needs mesh_ack, not another reply. Batch deliveryIds when appropriate. Reuse a messageId only when replaying the exact same message.',
++  'Finish after your outgoing request has a terminal answer that you acknowledged and you answered your incoming request. Record one mesh_checkpoint with your conclusion and the task/message IDs supporting it; omit the checkpoint id for a new record.',
++  'Call mesh_yield, copy its workRevision to final work_revision, and exit idle with a concise handoff. This closes your discussion contribution; it does not assert implementation-mission acceptance.',
++].join('\n');
+diff --git a/src/daemon.ts b/src/daemon.ts
+index 6091973..d210c52 100644
+--- a/src/daemon.ts
++++ b/src/daemon.ts
+@@ -175,7 +175,13 @@ export async function startDaemon(options: DaemonOptions): Promise<RunningDaemon
+       baseUrl: url,
+     });
+     completion = new Completion(store, workspace);
+-    const meshTools = new MeshTools(store, a2a, workspace, completion);
++    const workflow = (await store.mission(missionId)).config.workflow ?? 'implementation';
++    invariant(
++      workflow === 'implementation' || workflow === 'discussion',
++      'INVALID_WORKFLOW',
++      'Workflow must be implementation or discussion',
++    );
++    const meshTools = new MeshTools(store, a2a, workspace, completion, workflow);
+     const a2aRouter = a2a.router();
+     app.use((req, res, next) => {
+       if (req.path.startsWith('/agents/')) a2aRouter(req, res, next);
+diff --git a/src/runner.ts b/src/runner.ts
+index b9f15c5..46c4026 100644
+--- a/src/runner.ts
++++ b/src/runner.ts
+@@ -813,7 +813,7 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
+         continue;
+       }
+       failures = 0;
+-      if (end.result && ['idle', 'blocked', 'completion_proposed'].includes(end.result.outcome)) {
++      if (end.result && ['blocked', 'completion_proposed'].includes(end.result.outcome)) {
+         // The cursor came from mesh_yield; do not replace it with a later snapshot.
+         const revision = end.result.work_revision ?? observed.workRevision;
+         await emit({
+diff --git a/src/store.ts b/src/store.ts
+index aeea35e..e75cd25 100644
+--- a/src/store.ts
++++ b/src/store.ts
+@@ -655,10 +655,20 @@ export class Store {
+       invariant(r.rowCount, 'STALE_DEPENDENCY', `Decision ${id} changed or became stale`);
+     }
+   }
+-  async board(p: Principal, query?: string): Promise<unknown> {
++  async board(
++    p: Principal,
++    query?: string,
++    page: { knowledgeLimit?: number; knowledgeCursor?: { updatedAt: string; id: string } } = {},
++  ): Promise<unknown> {
+     await this.assertActive(p, this.db, true);
++    const limit = page.knowledgeLimit ?? 50;
++    invariant(
++      Number.isInteger(limit) && limit >= 1 && limit <= 100,
++      'INVALID_LIMIT',
++      'knowledgeLimit must be between 1 and 100',
++    );
+     const m = await this.mission(p.missionId);
+-    const [requirements, intentions, claims, knowledge, peers] = await Promise.all([
++    const [requirements, intentions, claims, knowledge, peers, summary] = await Promise.all([
+       this.db.query('SELECT * FROM requirements WHERE mission_id=$1 ORDER BY id LIMIT 200', [
+         p.missionId,
+       ]),
+@@ -669,20 +679,39 @@ export class Store {
+         "SELECT * FROM claims WHERE mission_id=$1 AND state IN ('held','quarantined') LIMIT 200",
+         [p.missionId],
+       ),
+-      query
+-        ? this.db.query(
+-            `SELECT * FROM knowledge WHERE mission_id=$1 AND to_tsvector('english',title||' '||body) @@ plainto_tsquery('english',$2) ORDER BY updated_at DESC LIMIT 50`,
+-            [p.missionId, query],
+-          )
+-        : this.db.query(
+-            'SELECT * FROM knowledge WHERE mission_id=$1 ORDER BY updated_at DESC LIMIT 50',
+-            [p.missionId],
+-          ),
++      this.db.query(
++        `SELECT *, updated_at::text AS cursor_time FROM knowledge WHERE mission_id=$1
++         AND ($2::text IS NULL OR to_tsvector('english',title||' '||body) @@ plainto_tsquery('english',$2))
++         AND ($3::timestamptz IS NULL OR (updated_at,id) < ($3::timestamptz,$4::text))
++         ORDER BY updated_at DESC,id DESC LIMIT $5`,
++        [
++          p.missionId,
++          query || null,
++          page.knowledgeCursor?.updatedAt ?? null,
++          page.knowledgeCursor?.id ?? null,
++          limit + 1,
++        ],
++      ),
+       this.db.query(
+         'SELECT id,generation,state,handoff FROM slots WHERE mission_id=$1 ORDER BY id',
+         [p.missionId],
+       ),
++      this.db.query(
++        `SELECT count(*) AS total,
++         count(*) FILTER (WHERE kind='finding') AS findings,
++         count(*) FILTER (WHERE kind='decision') AS decisions,
++         count(*) FILTER (WHERE kind='offer') AS offers,
++         count(*) FILTER (WHERE kind='blocker') AS blockers,
++         count(*) FILTER (WHERE status='resolved') AS resolved,
++         count(*) FILTER (WHERE freshness='stale') AS stale
++         FROM knowledge WHERE mission_id=$1
++         AND ($2::text IS NULL OR to_tsvector('english',title||' '||body) @@ plainto_tsquery('english',$2))`,
++        [p.missionId, query || null],
++      ),
+     ]);
++    const entries = knowledge.rows.slice(0, limit);
++    const hasMore = knowledge.rows.length > limit;
++    const last = entries.at(-1);
+     await this.observed(p, String(m.revision));
+     return {
+       mission: {
+@@ -695,7 +724,15 @@ export class Store {
+       requirements: requirements.rows,
+       intentions: intentions.rows,
+       claims: claims.rows,
+-      knowledge: knowledge.rows,
++      knowledge: entries.map(({ cursor_time, ...entry }) => entry),
++      knowledgePage: {
++        limit,
++        hasMore,
++        nextCursor: hasMore && last ? { updatedAt: last.cursor_time, id: last.id } : null,
++        summary: Object.fromEntries(
++          Object.entries(summary.rows[0]).map(([key, value]) => [key, Number(value)]),
++        ),
++      },
+       peers: peers.rows,
+     };
+   }
+diff --git a/src/tools.ts b/src/tools.ts
+index 84e2885..ec84a3e 100644
+--- a/src/tools.ts
++++ b/src/tools.ts
+@@ -1,4 +1,5 @@
+ import { randomUUID } from 'node:crypto';
++import { setTimeout as delay } from 'node:timers/promises';
+ import { TaskState } from '@a2a-js/sdk';
+ import { z } from 'zod';
+ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+@@ -6,6 +7,7 @@ import { Store, normalizeResource } from './store.js';
+ import { A2aService } from './a2a.js';
+ import { Workspace } from './workspace.js';
+ import { Completion } from './completion.js';
++import { coordinationInstructions, discussionInstructions } from './coordination.js';
+ import { invariant, type Principal } from './types.js';
+ 
+ const id = z.string().min(1).max(256);
+@@ -33,12 +35,45 @@ export class MeshTools {
+     readonly a2a: A2aService,
+     readonly workspace: Workspace,
+     readonly completion: Completion,
++    readonly workflow: 'implementation' | 'discussion' = 'implementation',
+   ) {}
++  private async participation(p: Principal) {
++    const mission = await this.store.observe(p.missionId);
++    const peers = await this.store.db.query<{ id: string }>(
++      `SELECT s.id FROM slots s JOIN runs r ON r.id=s.active_run_id
++       JOIN missions m ON m.id=s.mission_id
++       WHERE s.mission_id=$1 AND r.generation=s.generation
++       AND r.supervisor_epoch=m.supervisor_epoch AND r.state IN ('starting','running')
++       AND r.lease_expires>now() ORDER BY s.id`,
++      [p.missionId],
++    );
++    const mayExit = !['active', 'closing'].includes(mission.state);
++    return {
++      missionState: mission.state,
++      workRevision: mission.workRevision,
++      mayExit,
++      livePeerIds: peers.rows.map((peer) => peer.id),
++      nextAction: mayExit
++        ? 'The mission is terminal. Record the actual outcome in your final handoff.'
++        : 'Remain in this process. Handle reviews and inbox work; otherwise call mesh_wait. Releasing claims is not permission to exit.',
++    };
++  }
+   private async snapshot(
+     p: Principal,
+-    input: { query?: string; sinceRevision?: string; waitMs?: number } = {},
++    input: {
++      query?: string;
++      sinceRevision?: string;
++      waitMs?: number;
++      knowledgeLimit?: number;
++      knowledgeCursor?: { updatedAt: string; id: string };
++    } = {},
+   ) {
+-    if (input.sinceRevision && !input.query) {
++    if (
++      input.sinceRevision &&
++      !input.query &&
++      !input.knowledgeCursor &&
++      input.knowledgeLimit === undefined
++    ) {
+       const state = await this.store.waitForRevision(
+         p.missionId,
+         input.sinceRevision,
+@@ -48,8 +83,8 @@ export class MeshTools {
+         return { unchanged: true, workRevision: state.workRevision };
+     }
+     // Keep the initial revision so a concurrent change triggers the next refresh.
+-    const board = (await this.store.board(p, input.query)) as Record<string, any>;
+-    const [inbox, reviews, operations, consultations] = await Promise.all([
++    const board = (await this.store.board(p, input.query, input)) as Record<string, any>;
++    const [inbox, reviews, operations, consultations, participation] = await Promise.all([
+       this.a2a.poll(p),
+       this.store.db.query(
+         'SELECT id,agent_id,kind,target_id,target_revision,manifest_hash,coverage_hash,verdict,reasoning FROM reviews WHERE mission_id=$1 ORDER BY created_at DESC,id LIMIT 100',
+@@ -73,6 +108,7 @@ export class MeshTools {
+           ],
+         ],
+       ),
++      this.participation(p),
+     ]);
+     return {
+       ...board,
+@@ -81,6 +117,7 @@ export class MeshTools {
+       reviews: reviews.rows,
+       operations: operations.rows,
+       consultations: consultations.rows,
++      participation,
+       // Discovery lists are bounded; acceptance checks all records.
+       limits: { reviews: 100, operations: 50, consultations: 100 },
+     };
+@@ -97,6 +134,19 @@ export class MeshTools {
+       readOnly: boolean,
+       body: (a: any) => Promise<unknown>,
+     ) => {
++      if (
++        this.workflow === 'discussion' &&
++        ![
++          'mesh_join',
++          'mesh_ask',
++          'mesh_reply',
++          'mesh_poll',
++          'mesh_ack',
++          'mesh_checkpoint',
++          'mesh_yield',
++        ].includes(name)
++      )
++        return;
+       server.registerTool(
+         name,
+         {
+@@ -148,26 +198,98 @@ export class MeshTools {
+           'SELECT id,run_id,body,created_at FROM checkpoints WHERE mission_id=$1 AND agent_id=$2 ORDER BY created_at DESC LIMIT 3',
+           [p.missionId, p.agentId],
+         );
++        if (this.workflow === 'discussion') {
++          const peers = (
++            await this.store.db.query(
++              'SELECT id,state FROM slots WHERE mission_id=$1 ORDER BY id',
++              [p.missionId],
++            )
++          ).rows as { id: string; state: string }[];
++          const index = peers.findIndex((peer) => peer.id === p.agentId);
++          invariant(
++            peers.length >= 2 && index >= 0,
++            'DISCUSSION_PEERS_REQUIRED',
++            'Discussion requires at least two peers',
++          );
++          return {
++            identity: p,
++            roadmap: { path: m.roadmap_path, text: m.roadmap_text, hash: m.roadmap_hash },
++            workflow: discussionInstructions,
++            profile: this.workflow,
++            peers,
++            discussionPartner: peers[(index + 1) % peers.length].id,
++            inbox: await this.a2a.poll(p),
++            checkpoints: checkpoints.rows,
++          };
++        }
+         return {
+           identity: p,
+           roadmap: { path: m.roadmap_path, text: m.roadmap_text, hash: m.roadmap_hash },
+           board: await this.snapshot(p),
+           checkpoints: checkpoints.rows,
+           protocol: { a2a: '1.0', mcp: 'Streamable HTTP' },
++          profile: this.workflow,
++          workflow: coordinationInstructions,
+         };
+       },
+     );
+     tool(
+       'mesh_board',
+-      'Read shared work, inbox, open consultations, reviews, and reusable operation evidence. sinceRevision suppresses unchanged snapshots; waitMs waits for change. Search filters knowledge only. Lists are bounded; final acceptance checks all records.',
++      'Read shared work, inbox, open consultations, reviews, and reusable operation evidence. knowledgePage includes counts and nextCursor; pass it as knowledgeCursor with the same query to read older knowledge. sinceRevision suppresses unchanged snapshots except explicit knowledge page requests; waitMs waits for change. Search filters knowledge only. Lists are bounded; final acceptance checks all records.',
+       {
+         query: z.string().max(400).optional(),
+         sinceRevision: z.string().regex(/^\d+$/).optional(),
+         waitMs: z.number().int().min(0).max(30_000).optional(),
++        knowledgeLimit: z.number().int().min(1).max(100).optional(),
++        knowledgeCursor: z.object({ updatedAt: z.string().min(1).max(100), id }).optional(),
+       },
+       true,
+       (a) => this.snapshot(p, a),
+     );
++    tool(
++      'mesh_wait',
++      'Stay available in this process for reviews and messages. Wait up to 30000 ms (default 20000) without ending your session. Wakes on inbox delivery, shared work change, or mission termination. While mayExit=false, do useful work or wait again; do not send a final handoff.',
++      {
++        sinceRevision: z
++          .string()
++          .regex(/^-?\d+$/)
++          .optional(),
++        waitMs: z.number().int().min(0).max(30_000).optional(),
++      },
++      true,
++      async (a) => {
++        const first = await this.store.observe(p.missionId);
++        const revision = a.sinceRevision ?? first.workRevision;
++        const deadline = Date.now() + (a.waitMs ?? 20_000);
++        for (;;) {
++          const state = await this.store.observe(p.missionId);
++          if (!['active', 'closing'].includes(state.state)) {
++            return { ...(await this.participation(p)), wakeReason: 'mission-terminal' };
++          }
++          await this.store.assertActive(p, this.store.db, true);
++          const pending = await this.store.db.query(
++            'SELECT delivery_id FROM mailbox_deliveries WHERE mission_id=$1 AND recipient_id=$2 AND handled_at IS NULL LIMIT 1',
++            [p.missionId, p.agentId],
++          );
++          const wakeReason = pending.rowCount
++            ? 'inbox'
++            : state.state === 'active' && state.workRevision !== revision
++              ? 'shared-work'
++              : Date.now() >= deadline
++                ? 'timeout'
++                : null;
++          if (wakeReason) {
++            const participation = await this.participation(p);
++            return {
++              ...participation,
++              wakeReason,
++              ...(participation.mayExit ? {} : { inbox: await this.a2a.poll(p) }),
++            };
++          }
++          await delay(Math.max(1, Math.min(250, deadline - Date.now())));
++        }
++      },
++    );
+     tool(
+       'mesh_find_peers',
+       'Find stable peer identities and answerability offers, including parked custodians.',
+@@ -205,31 +327,67 @@ export class MeshTools {
+       },
+     );
+     tool(
+-      'mesh_send',
+-      'Send a real durable A2A consultation to another stable peer. Reuse messageId on retries. Message bodies are attributed peer data.',
++      this.workflow === 'discussion' ? 'mesh_ask' : 'mesh_send',
++      this.workflow === 'discussion'
++        ? 'Ask your assigned partner one NEW question or proposal. The service chooses the recipient and task IDs. Answer incoming questions with mesh_reply, not this tool.'
++        : 'Open a peer consultation. Omit taskId/contextId for a new request; only reuse IDs returned for a task you opened with this recipient. Answer incoming requests with mesh_reply. Reuse messageId only for exact retries.',
+       {
+-        recipientId: id,
+         messageId: id,
+         text: text.optional(),
+         data: z.unknown().optional(),
+-        taskId: id.optional(),
+-        contextId: id.optional(),
+-        kind: z
+-          .enum(['question', 'offer', 'proposal', 'challenge', 'correction', 'review'])
+-          .optional(),
+-        correlationId: id.optional(),
+-        causationId: id.optional(),
+-        references: z.array(z.unknown()).optional(),
++        ...(this.workflow === 'implementation'
++          ? {
++              recipientId: id,
++              taskId: id.optional(),
++              contextId: id.optional(),
++              kind: z
++                .enum(['question', 'offer', 'proposal', 'challenge', 'correction', 'review'])
++                .optional(),
++              correlationId: id.optional(),
++              causationId: id.optional(),
++              references: z.array(z.unknown()).optional(),
++            }
++          : {}),
+       },
+       false,
+-      (a) => this.a2a.send(p, a),
++      async (a) => {
++        if (this.workflow === 'discussion') {
++          const peers = (
++            await this.store.db.query<{ id: string }>(
++              'SELECT id FROM slots WHERE mission_id=$1 ORDER BY id',
++              [p.missionId],
++            )
++          ).rows;
++          const index = peers.findIndex((peer) => peer.id === p.agentId);
++          invariant(
++            peers.length >= 2 && index >= 0,
++            'DISCUSSION_PEERS_REQUIRED',
++            'Discussion requires at least two peers',
++          );
++          a = {
++            messageId: a.messageId,
++            text: a.text,
++            data: a.data,
++            recipientId: peers[(index + 1) % peers.length].id,
++            kind: 'question',
++          };
++        }
++        const receipt = await this.a2a.send(p, a);
++        invariant(
++          receipt.state !== 'failed',
++          'DELIVERY_FAILED',
++          `Peer delivery failed: ${JSON.stringify(receipt.error)}. Outbox: ${receipt.outboxId}`,
++        );
++        return receipt;
++      },
+     );
+     tool(
+       'mesh_reply',
+-      'Answer or advance a task addressed to your stable peer. Terminal tasks remain terminal; follow-up conversations need a new task.',
++      'Answer a task addressed to your peer. Include the incoming deliveryId to acknowledge that request in the same transaction. Terminal tasks remain terminal; acknowledge terminal answers with mesh_ack.',
+       {
+         taskId: id,
+         messageId: id,
++        deliveryId: id.optional(),
+         text: text.optional(),
+         data: z.unknown().optional(),
+         state: z.enum(['completed', 'working', 'input-required', 'rejected', 'failed']).optional(),
+@@ -246,8 +404,11 @@ export class MeshTools {
+     );
+     tool(
+       'mesh_poll',
+-      'Read full durable inbox messages without acknowledging them. Record returned workRevision in a final idle handoff.',
+-      { limit: z.number().int().min(1).max(128).optional() },
++      'Read pending inbox messages without acknowledging them. waitMs waits for actual pending mail, avoiding empty refreshes. Use mesh_yield for a final handoff revision.',
++      {
++        limit: z.number().int().min(1).max(128).optional(),
++        waitMs: z.number().int().min(0).max(30_000).optional(),
++      },
+       true,
+       async (a) => {
+         const result = await this.a2a.poll(p, a);
+@@ -412,12 +573,15 @@ export class MeshTools {
+     );
+     tool(
+       'mesh_exec',
+-      'Start a bounded command and return an operation handle immediately. Read commands have confined source access; mutate requires a whole-workspace claim. Use MESH_OUTPUT_DIR for generated output.',
++      'Start a bounded command and return an operation handle immediately. cwd is repository-relative: omit it or use "." for the root, never an absolute path. Read commands have confined source access; mutate requires a whole-workspace claim. Use MESH_OUTPUT_DIR for generated output.',
+       {
+         operationId: id,
+         claimId: id.optional(),
+         argv: z.array(z.string()).min(1).max(512),
+-        cwd: z.string().optional(),
++        cwd: z
++          .string()
++          .describe('Repository-relative working directory; omit or use "." for the root.')
++          .optional(),
+         mode: z.enum(['read', 'mutate']),
+         timeoutMs: z.number().int().min(100).max(3_600_000).optional(),
+         network: z.boolean().optional(),
+@@ -442,18 +606,27 @@ export class MeshTools {
+     );
+     tool(
+       'mesh_checkpoint',
+-      'Persist a durable handoff containing files, decisions, tests, unfinished changes, pending questions, and next useful work.',
+-      { id: id.optional(), body: z.unknown() },
++      'Persist a concise handoff with evidence and unresolved work. Omit id for a new record; reusing an id requires exactly the same body.',
++      {
++        id: id.optional(),
++        body: z
++          .record(z.unknown())
++          .refine((value) => Object.keys(value).length > 0, 'Provide a nonempty checkpoint object'),
++      },
+       false,
+       (a) => this.store.checkpoint(p, a.body, a.id),
+     );
+     tool(
+       'mesh_yield',
+-      "Cancel and reap this run's outstanding commands, release claims, and record a dependency. Return workRevision in your structured final handoff.",
++      "Cancel and reap this run's outstanding commands and release claims for review. This does not end participation. Implementation peers must remain available with mesh_wait while mayExit=false.",
+       { reason: z.string().min(1), waitingOn: z.array(id).optional() },
+       false,
+       async (a) => {
+-        return this.workspace.yieldRun(p.runId, () => this.store.yield(p, a.reason, a.waitingOn));
++        const released = await this.workspace.yieldRun(p.runId, () =>
++          this.store.yield(p, a.reason, a.waitingOn),
++        );
++        if (this.workflow === 'discussion') return released;
++        return { ...(await this.participation(p)), ...released };
+       },
+     );
+     tool(
+diff --git a/test/a2a.test.ts b/test/a2a.test.ts
+index 4d0f732..24b0576 100644
+--- a/test/a2a.test.ts
++++ b/test/a2a.test.ts
+@@ -180,6 +180,77 @@ function request(messageId: string, text: string, extra: Record<string, unknown>
+   });
+ }
+ 
++test('reply and request acknowledgment commit atomically and replay without duplicate mail', async (t) => {
++  const h = await harness();
++  t.after(() => h.close());
++  const sender = h.current('A1');
++  const receiver = h.current('A2');
++  const first = await h.service.send(sender, {
++    recipientId: 'A2',
++    messageId: 'request-one',
++    text: 'Compare options.',
++  });
++  await h.service.send(sender, {
++    recipientId: 'A2',
++    messageId: 'request-two',
++    text: 'A separate question.',
++  });
++  const inbox = await h.service.poll(receiver);
++  const input = {
++    taskId: first.taskId!,
++    messageId: 'atomic-answer',
++    deliveryId: inbox.messages.find((m) => m.messageId === 'request-one')!.deliveryId,
++    text: 'First option is clearer because it separates decisions.',
++    state: 'completed' as const,
++  };
++  await assert.rejects(
++    h.service.reply(receiver, {
++      ...input,
++      deliveryId: inbox.messages.find((m) => m.messageId === 'request-two')!.deliveryId,
++    }),
++    (error: any) => error.code === 'INVALID_REPLY_DELIVERY',
++  );
++  h.failNextEvent('message.reply.accepted');
++  await assert.rejects(h.service.reply(receiver, input));
++  assert.equal((await h.service.poll(receiver)).messages.length, 2);
++  assert.equal((await h.service.poll(sender)).messages.length, 0);
++  const reply = await h.service.reply(receiver, input);
++  assert.equal(reply.acknowledgedDeliveryId, input.deliveryId);
++  assert.equal((await h.service.reply(receiver, input)).replayed, true);
++  assert.equal((await h.service.poll(receiver)).messages.length, 1);
++  assert.equal((await h.service.poll(sender)).messages.length, 1);
++  await assert.rejects(
++    h.service.reply(receiver, { ...input, deliveryId: undefined }),
++    /different payload|different content|different message/i,
++  );
++});
++
++test('inbox waits wake for mail, time out empty, and stop when the run is fenced', async (t) => {
++  const h = await harness();
++  t.after(() => h.close());
++  let settled = false;
++  const waiting = h.service.poll(h.current('A2'), { waitMs: 2000 }).then((result) => {
++    settled = true;
++    return result;
++  });
++  await h.db.query("UPDATE missions SET revision=revision+1 WHERE id='mission-a'");
++  await delay(40);
++  assert.equal(settled, false);
++  await h.service.send(h.current('A1'), {
++    recipientId: 'A2',
++    messageId: 'wake',
++    text: 'Question after waiting.',
++  });
++  assert.equal((await waiting).messages.length, 1);
++  assert.equal((await h.traceEvents()).filter((e) => e.kind === 'mailbox.polled').length, 1);
++  assert.equal((await h.service.poll(h.current('A3'), { waitMs: 5 })).messages.length, 0);
++  await assert.rejects(h.service.poll(h.current('A3'), { waitMs: -1 }), /waitMs/);
++  const fenced = h.service.poll(h.current('A3'), { waitMs: 2000 });
++  const rejection = assert.rejects(fenced, (error: any) => error.code === 'STALE_RUN');
++  h.rotate('A3');
++  await rejection;
++});
++
+ test('independent A2A SDK client, durable replies, participant scope, and complete message trace', async (t) => {
+   const h = await harness();
+   t.after(() => h.close());
+diff --git a/test/daemon.test.ts b/test/daemon.test.ts
+index 9af78d1..49c5a44 100644
+--- a/test/daemon.test.ts
++++ b/test/daemon.test.ts
+@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
+ import { join } from 'node:path';
+ import { execFile } from 'node:child_process';
+ import { promisify } from 'node:util';
++import { setTimeout as delay } from 'node:timers/promises';
+ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+ import { startDaemon } from '../src/daemon.js';
+@@ -13,7 +14,108 @@ import { exportMission, messages, metrics } from '../src/observer.js';
+ import { readEvents } from '../src/trace.js';
+ const exec = promisify(execFile);
+ 
+-async function fixture() {
++async function waitForWaitStarted(f: Awaited<ReturnType<typeof fixture>>, count = 1) {
++  for (let i = 0; i < 100; i++) {
++    const events = await readEvents(f.db, f.daemon.missionId, { kind: 'tool.mesh_wait.started' });
++    if (events.length >= count) return;
++    await delay(10);
++  }
++  assert.fail('Peer did not enter its wait');
++}
++
++test('participation waits keep sessions live, fence expired runs, and allow terminal exit only', async (t) => {
++  const f = await fixture();
++  t.after(f.close);
++  const joined = await f.call(f.cb, 'mesh_join');
++  assert.deepEqual(joined.board.participation.livePeerIds, ['A1', 'A2']);
++  assert.equal(joined.board.participation.mayExit, false);
++  const released = await f.call(f.cb, 'mesh_yield', { reason: 'Available for later reviews' });
++  assert.equal(released.mayExit, false);
++  const timeout = await f.call(f.cb, 'mesh_wait', { waitMs: 10 });
++  assert.equal(timeout.wakeReason, 'timeout');
++  assert.equal(timeout.mayExit, false);
++  assert.equal((await f.call(f.cb, 'mesh_join')).identity.runId, f.b.principal.runId);
++
++  // A changed source/requirement must wake an available participant, even without mail.
++  const changed = f.call(f.cb, 'mesh_wait', { sinceRevision: timeout.workRevision, waitMs: 2000 });
++  await waitForWaitStarted(f, 2);
++  await f.call(f.ca, 'mesh_checkpoint', { body: { summary: 'Evidence is ready for inspection' } });
++  assert.equal((await changed).wakeReason, 'shared-work');
++
++  const fenced = f.call(f.cb, 'mesh_wait', { waitMs: 2000 });
++  const rejected = assert.rejects(fenced, /STALE_RUN/);
++  await waitForWaitStarted(f, 3);
++  await f.db.query("UPDATE runs SET lease_expires=now()-interval '1 second' WHERE id=$1", [
++    f.b.principal.runId,
++  ]);
++  await rejected;
++  const active = await f.call(f.ca, 'mesh_join');
++  assert.deepEqual(active.board.participation.livePeerIds, ['A1']);
++
++  // Closing is not permission to leave; a waiting process observes the terminal outcome.
++  await f.db.query("UPDATE missions SET state='closing' WHERE id=$1", [f.daemon.missionId]);
++  const closing = await f.call(f.ca, 'mesh_wait', { waitMs: 10 });
++  assert.equal(closing.mayExit, false);
++  assert.equal(closing.missionState, 'closing');
++  const terminal = f.call(f.ca, 'mesh_wait', { waitMs: 2000 });
++  await waitForWaitStarted(f, 5);
++  await f.db.query("UPDATE missions SET state='completed' WHERE id=$1", [f.daemon.missionId]);
++  const completed = await terminal;
++  assert.equal(completed.mayExit, true);
++  assert.equal(completed.wakeReason, 'mission-terminal');
++});
++
++test('checkpoint body is required and malformed checkpoints do not reach persistence', async (t) => {
++  const f = await fixture();
++  t.after(f.close);
++  const checkpoint = (await f.ca.listTools()).tools.find(
++    (tool) => tool.name === 'mesh_checkpoint',
++  )!;
++  assert.ok(checkpoint.inputSchema.required?.includes('body'));
++  for (const args of [{}, { body: null }, { body: {} }]) {
++    assert.equal((await f.ca.callTool({ name: 'mesh_checkpoint', arguments: args })).isError, true);
++  }
++  assert.equal((await f.db.query('SELECT id FROM checkpoints')).rowCount, 0);
++});
++
++test('board knowledge pagination bypasses unchanged snapshots and retains search filters', async (t) => {
++  const f = await fixture();
++  t.after(() => f.close());
++  for (const id of ['old', 'new', 'unrelated']) {
++    await f.call(f.ca, 'mesh_remember', {
++      id,
++      kind: 'finding',
++      title: id === 'unrelated' ? 'Unrelated' : 'Historical solution',
++      body: id,
++    });
++  }
++  const joined = await f.call(f.cb, 'mesh_join');
++  assert.equal(joined.board.knowledgePage.summary.total, 3);
++  const first = await f.call(f.cb, 'mesh_board', {
++    sinceRevision: joined.board.workRevision,
++    knowledgeLimit: 1,
++    query: 'Historical',
++  });
++  assert.equal(first.knowledge.length, 1);
++  assert.equal(first.knowledgePage.summary.total, 2);
++  const second = await f.call(f.cb, 'mesh_board', {
++    sinceRevision: first.workRevision,
++    knowledgeCursor: first.knowledgePage.nextCursor,
++    query: 'Historical',
++  });
++  assert.equal(second.knowledge.length, 1);
++  assert.notEqual(first.knowledge[0].id, second.knowledge[0].id);
++  assert.equal(second.knowledgePage.hasMore, false);
++  // A cursor-only request must also bypass sinceRevision without a search query.
++  const all = await f.call(f.cb, 'mesh_board', { knowledgeLimit: 1 });
++  const remaining = await f.call(f.cb, 'mesh_board', {
++    sinceRevision: all.workRevision,
++    knowledgeCursor: all.knowledgePage.nextCursor,
++  });
++  assert.equal(remaining.knowledge.length, 2);
++});
++
++async function fixture(workflow: 'implementation' | 'discussion' = 'implementation') {
+   const directory = await mkdtemp(join(tmpdir(), 'mesh-integration-'));
+   const repo = join(directory, 'repo');
+   await mkdir(repo);
+@@ -30,7 +132,8 @@ async function fixture() {
+     repo,
+     runtimeDir: join(directory, 'runtime'),
+     roadmapPath: 'ROADMAP.md',
+-    agents: 2,
++    agents: workflow === 'discussion' ? 3 : 2,
++    config: { workflow },
+     port: 0,
+     workspace: {
+       commandBuilder: async (o) => ({
+@@ -98,6 +201,70 @@ async function fixture() {
+   };
+ }
+ 
++test('discussion profile exposes only communication tools and gives each peer one partner', async (t) => {
++  const f = await fixture('discussion');
++  t.after(f.close);
++  assert.deepEqual((await f.ca.listTools()).tools.map((tool) => tool.name).sort(), [
++    'mesh_ack',
++    'mesh_ask',
++    'mesh_checkpoint',
++    'mesh_join',
++    'mesh_poll',
++    'mesh_reply',
++    'mesh_yield',
++  ]);
++  const ask = (await f.ca.listTools()).tools.find((tool) => tool.name === 'mesh_ask')!;
++  assert.equal(ask.inputSchema.properties?.recipientId, undefined);
++  assert.equal(ask.inputSchema.properties?.taskId, undefined);
++  assert.equal(ask.inputSchema.properties?.contextId, undefined);
++  const question = await f.call(f.ca, 'mesh_ask', {
++    messageId: 'round-question',
++    text: 'Which option is clearer?',
++  });
++  assert.equal(question.recipientId, 'A2');
++  const incoming = await f.call(f.cb, 'mesh_poll');
++  await f.call(f.cb, 'mesh_reply', {
++    taskId: question.taskId,
++    messageId: 'round-answer',
++    deliveryId: incoming.messages[0].deliveryId,
++    text: 'The first is clearer because it is shorter.',
++    state: 'completed',
++  });
++  assert.equal((await f.call(f.cb, 'mesh_poll')).messages.length, 0);
++  const answer = await f.call(f.ca, 'mesh_poll');
++  await f.call(f.ca, 'mesh_ack', { deliveryId: answer.messages[0].deliveryId });
++  const joined = await f.call(f.ca, 'mesh_join');
++  assert.equal(joined.profile, 'discussion');
++  assert.equal(joined.discussionPartner, 'A2');
++  assert.equal((await f.call(f.cb, 'mesh_join')).discussionPartner, 'A3');
++  assert.equal(joined.inbox.messages.length, 0);
++  assert.equal(joined.board, undefined);
++  assert.deepEqual(joined.checkpoints, []);
++  await assert.rejects(f.call(f.ca, 'mesh_propose_completion', { operationId: 'not-available' }));
++});
++
++test('permanent delivery failure is a tool error and a failed span, not a successful receipt', async (t) => {
++  const f = await fixture();
++  t.after(f.close);
++  await assert.rejects(
++    f.call(f.ca, 'mesh_send', {
++      recipientId: 'A2',
++      messageId: 'invalid-task',
++      taskId: 'invented-task',
++      text: 'A new request must not invent task IDs.',
++    }),
++    /DELIVERY_FAILED/,
++  );
++  const events = await readEvents(f.db, f.daemon.missionId, { limit: 2000 });
++  assert.equal(events.filter((event) => event.kind === 'tool.mesh_send.failed').length, 1);
++  assert.equal(events.filter((event) => event.kind === 'tool.mesh_send.completed').length, 0);
++  assert.equal(
++    (await f.db.query('SELECT state FROM a2a_outbox WHERE mission_id=$1', [f.daemon.missionId]))
++      .rows[0].state,
++    'failed',
++  );
++});
++
+ test('independent MCP peers consult over A2A, publish in one checkout, and complete with a traced final barrier', async (t) => {
+   const f = await fixture();
+   t.after(f.close);
+@@ -141,6 +308,11 @@ test('independent MCP peers consult over A2A, publish in one checkout, and compl
+     description: 'Review counter',
+   });
+   assert.equal(conflict.granted, false);
++  // The reviewer stays in its original authenticated process after releasing work.
++  const releasedReviewer = await f.call(f.cb, 'mesh_yield', { reason: 'Available for review' });
++  assert.equal(releasedReviewer.mayExit, false);
++  const reviewWait = f.call(f.cb, 'mesh_wait', { waitMs: 2000 });
++  await waitForWaitStarted(f);
+   const request = await f.call(f.ca, 'mesh_send', {
+     recipientId: 'A2',
+     messageId: 'question-1',
+@@ -149,7 +321,11 @@ test('independent MCP peers consult over A2A, publish in one checkout, and compl
+   });
+   const consultationBoard = await f.call(f.cb, 'mesh_board');
+   assert.equal(consultationBoard.consultations[0].task_id, request.taskId);
+-  const incoming = consultationBoard.inbox;
++  const awakenedReviewer = await reviewWait;
++  assert.equal(awakenedReviewer.wakeReason, 'inbox');
++  assert.equal(awakenedReviewer.mayExit, false);
++  assert.equal((await f.call(f.cb, 'mesh_join')).identity.runId, f.b.principal.runId);
++  const incoming = awakenedReviewer.inbox;
+   assert.equal(incoming.messages.length, 1);
+   await f.call(f.cb, 'mesh_reply', {
+     taskId: request.taskId,
+@@ -212,7 +388,12 @@ test('independent MCP peers consult over A2A, publish in one checkout, and compl
+   );
+   assert.equal(reviewed.consultations.length, 0);
+   assert.equal(reviewed.inbox.messages.length, 0);
+-  await f.call(f.ca, 'mesh_yield', { reason: 'Implementation ready for final verification' });
++  const released = await f.call(f.ca, 'mesh_yield', {
++    reason: 'Implementation ready for final verification',
++  });
++  assert.equal(released.mayExit, false);
++  const acceptanceWait = f.call(f.cb, 'mesh_wait', { waitMs: 2000 });
++  await waitForWaitStarted(f, 2);
+   const proposal = await f.call(f.ca, 'mesh_propose_completion', {
+     operationId: 'finish-1',
+     checks: [
+@@ -231,6 +412,7 @@ test('independent MCP peers consult over A2A, publish in one checkout, and compl
+     'completed',
+     JSON.stringify(await f.daemon.completion.status(mission.id, 'finish-1')),
+   );
++  assert.equal((await acceptanceWait).mayExit, true);
+   const events = await readEvents(f.db, mission.id, { limit: 2000 });
+   assert.ok(events.some((e) => e.kind === 'mission.completed'));
+   assert.ok(events.some((e) => e.kind === 'completion.proposal.completed'));
+diff --git a/test/runner.test.ts b/test/runner.test.ts
+index db079ca..05c13c7 100644
+--- a/test/runner.test.ts
++++ b/test/runner.test.ts
+@@ -131,8 +131,8 @@ else {
+   process.stdout.write(bytes.subarray(bytes.length - 25));
+   process.stderr.write('diagnostic ' + token + '\\n');
+   await delay(mode === 'closing-workers' && process.env.MESH_SLOT_ID === 'A2' ? 100 : Number(process.env.MESH_TEST_DELAY ?? 3));
+-  const outcome = (mode === 'idle' || (mode === 'idle-first-slot' && process.env.MESH_SLOT_ID === 'A1')) && generation === 1 ? 'idle' : 'continue';
+-  const result = { outcome, summary: 'handoff ' + token, checkpoint_id: null, waiting_on: outcome === 'idle' ? ['decision-1'] : [], work_revision: outcome === 'idle' ? '1' : null };
++  const outcome = mode === 'idle-always' ? 'idle' : generation === 1 && (mode === 'blocked' || (mode === 'blocked-first-slot' && process.env.MESH_SLOT_ID === 'A1')) ? 'blocked' : mode === 'idle' && generation === 1 ? 'idle' : 'continue';
++  const result = { outcome, summary: 'handoff ' + token, checkpoint_id: null, waiting_on: ['idle', 'blocked'].includes(outcome) ? ['decision-1'] : [], work_revision: ['idle', 'blocked'].includes(outcome) ? '1' : null };
+   const path = process.argv[process.argv.indexOf('--output-last-message') + 1];
+   await writeFile(path, JSON.stringify(result));
+   process.stdout.write(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 7, output_tokens: 3 } }) + '\\n');
+@@ -311,8 +311,41 @@ test('output capture is attached before asynchronous PID persistence for a short
+   }
+ });
+ 
+-test('idle peers park at the mesh_yield cursor and see work arriving during exit', async () => {
+-  const f = await fixture('idle');
++test('idle exits replace every slot without a work revision and stop at the elapsed limit', async () => {
++  const f = await fixture('idle-always');
++  try {
++    f.options.concurrency = 5;
++    f.options.maxRuns = 1000;
++    f.options.maxElapsedMs = 1500;
++    let peak = 0;
++    const spawnWorker = f.options.spawn!;
++    f.options.spawn = (command, args, options) => {
++      peak = Math.max(peak, f.store.live.size);
++      assert.ok(f.store.live.size <= 5);
++      return spawnWorker(command, args, options);
++    };
++    const started = Date.now();
++    const summary = await runMesh(f.options);
++    assert.equal(summary.state, 'resource-limit');
++    assert.equal(f.store.stopReason, 'Maximum elapsed time reached');
++    assert.ok(Date.now() - started < 5000);
++    assert.equal(peak, 5);
++    assert.equal(f.store.generations.size, 5);
++    for (const generation of f.store.generations.values()) assert.ok(generation >= 2);
++    assert.equal(f.store.revision, '1');
++    assert.deepEqual(f.store.waitedRevisions, []);
++    assert.equal(summary.runsStarted, summary.runsFinished);
++    assert.equal(f.store.live.size, 0);
++    assert.ok(f.store.ends.every(({ end }) => end.reaped));
++    assert.ok(f.children.every((child) => child.exitCode !== null || child.signalCode !== null));
++    assert.ok(!f.events.some((event) => event.kind === 'slot.parked'));
++  } finally {
++    await f.cleanup();
++  }
++});
++
++test('blocked peers park at the mesh_yield cursor and see work arriving during exit', async () => {
++  const f = await fixture('blocked');
+   try {
+     f.options.maxRuns = 2;
+     f.store.beforeEnd = (principal) => {
+@@ -392,8 +425,8 @@ test('closing preserves already-running peers and waits for mission acceptance w
+   }
+ });
+ 
+-test('parked populations honor the hard elapsed limit without repeated idle runs', async () => {
+-  const f = await fixture('idle');
++test('blocked populations honor the hard elapsed limit without repeated runs', async () => {
++  const f = await fixture('blocked');
+   try {
+     f.options.maxRuns = 8;
+     f.options.maxElapsedMs = 300;
+@@ -407,7 +440,7 @@ test('parked populations honor the hard elapsed limit without repeated idle runs
+ });
+ 
+ test('a slot already parked exits when another slot exhausts the shared run budget', async () => {
+-  const f = await fixture('idle-first-slot');
++  const f = await fixture('blocked-first-slot');
+   try {
+     f.options.concurrency = 2;
+     f.options.maxRuns = 3;
+diff --git a/test/store.test.ts b/test/store.test.ts
+index 68c9de3..70a5e55 100644
+--- a/test/store.test.ts
++++ b/test/store.test.ts
+@@ -61,6 +61,58 @@ async function setup() {
+   return { db, store, mission, a, b, epoch };
+ }
+ 
++test('knowledge pages retain old resolved findings and paginate timestamp ties without loss', async (t) => {
++  const s = await setup();
++  t.after(() => s.db.close());
++  for (let i = 0; i < 53; i++) {
++    await s.store.remember(s.a.principal, {
++      id: `finding-${String(i).padStart(2, '0')}`,
++      kind: 'finding',
++      title: i === 0 ? 'Historical solution' : 'Current finding',
++      body: 'Evidence retained for every agent.',
++      status: i === 0 ? 'resolved' : 'open',
++    });
++  }
++  // Preserve sub-millisecond precision in cursors and break ties by ID.
++  await s.db.query(
++    "UPDATE knowledge SET updated_at='2026-01-01 00:00:00.123456+00' WHERE mission_id=$1",
++    [s.mission.id],
++  );
++  const first = (await s.store.board(s.b.principal)) as any;
++  assert.equal(first.knowledge.length, 50);
++  assert.equal(first.knowledgePage.hasMore, true);
++  assert.deepEqual(first.knowledgePage.summary, {
++    total: 53,
++    findings: 53,
++    decisions: 0,
++    offers: 0,
++    blockers: 0,
++    resolved: 1,
++    stale: 0,
++  });
++  const second = (await s.store.board(s.b.principal, undefined, {
++    knowledgeCursor: first.knowledgePage.nextCursor,
++  })) as any;
++  assert.equal(second.knowledge.length, 3);
++  assert.equal(second.knowledgePage.hasMore, false);
++  assert.equal(second.knowledgePage.nextCursor, null);
++  const entries = [...first.knowledge, ...second.knowledge];
++  assert.equal(new Set(entries.map((entry) => entry.id)).size, 53);
++  assert.equal(entries.at(-1).status, 'resolved');
++  assert.equal(entries.at(-1).id, 'finding-00');
++  const search = (await s.store.board(s.b.principal, 'Historical', { knowledgeLimit: 1 })) as any;
++  assert.equal(search.knowledgePage.summary.total, 1);
++  assert.equal(search.knowledge[0].id, 'finding-00');
++  assert.equal(search.knowledgePage.hasMore, false);
++  const empty = (await s.store.board(s.b.principal, 'nonexistent')) as any;
++  assert.equal(empty.knowledgePage.summary.total, 0);
++  assert.equal(empty.knowledgePage.nextCursor, null);
++  await assert.rejects(
++    s.store.board(s.b.principal, undefined, { knowledgeLimit: 0 }),
++    /knowledgeLimit/,
++  );
++});
++
+ test('identical requirement publication preserves revision, author, reviews, and work revision', async (t) => {
+   const s = await setup();
+   t.after(() => s.db.close());

@@ -1,0 +1,10 @@
+--- a/src/cli.ts
++++ b/src/cli.ts
+@@ -234,6 +234,7 @@
+           'heavy-commands',
+         ),
+         config: {
++          workflow: config.workflow ?? 'implementation',
+           verification: verification ?? [],
+           model: values.model ?? config.model,
+           codexBinary: codexBinary ?? 'codex',

@@ -61,6 +61,58 @@ async function setup() {
   return { db, store, mission, a, b, epoch };
 }
 
+test('knowledge pages retain old resolved findings and paginate timestamp ties without loss', async (t) => {
+  const s = await setup();
+  t.after(() => s.db.close());
+  for (let i = 0; i < 53; i++) {
+    await s.store.remember(s.a.principal, {
+      id: `finding-${String(i).padStart(2, '0')}`,
+      kind: 'finding',
+      title: i === 0 ? 'Historical solution' : 'Current finding',
+      body: 'Evidence retained for every agent.',
+      status: i === 0 ? 'resolved' : 'open',
+    });
+  }
+  // Preserve sub-millisecond precision in cursors and break ties by ID.
+  await s.db.query(
+    "UPDATE knowledge SET updated_at='2026-01-01 00:00:00.123456+00' WHERE mission_id=$1",
+    [s.mission.id],
+  );
+  const first = (await s.store.board(s.b.principal)) as any;
+  assert.equal(first.knowledge.length, 50);
+  assert.equal(first.knowledgePage.hasMore, true);
+  assert.deepEqual(first.knowledgePage.summary, {
+    total: 53,
+    findings: 53,
+    decisions: 0,
+    offers: 0,
+    blockers: 0,
+    resolved: 1,
+    stale: 0,
+  });
+  const second = (await s.store.board(s.b.principal, undefined, {
+    knowledgeCursor: first.knowledgePage.nextCursor,
+  })) as any;
+  assert.equal(second.knowledge.length, 3);
+  assert.equal(second.knowledgePage.hasMore, false);
+  assert.equal(second.knowledgePage.nextCursor, null);
+  const entries = [...first.knowledge, ...second.knowledge];
+  assert.equal(new Set(entries.map((entry) => entry.id)).size, 53);
+  assert.equal(entries.at(-1).status, 'resolved');
+  assert.equal(entries.at(-1).id, 'finding-00');
+  const search = (await s.store.board(s.b.principal, 'Historical', { knowledgeLimit: 1 })) as any;
+  assert.equal(search.knowledgePage.summary.total, 1);
+  assert.equal(search.knowledge[0].id, 'finding-00');
+  assert.equal(search.knowledgePage.hasMore, false);
+  const empty = (await s.store.board(s.b.principal, 'nonexistent')) as any;
+  assert.equal(empty.knowledgePage.summary.total, 0);
+  assert.equal(empty.knowledgePage.nextCursor, null);
+  await assert.rejects(
+    s.store.board(s.b.principal, undefined, { knowledgeLimit: 0 }),
+    /knowledgeLimit/,
+  );
+});
+
 test('identical requirement publication preserves revision, author, reviews, and work revision', async (t) => {
   const s = await setup();
   t.after(() => s.db.close());

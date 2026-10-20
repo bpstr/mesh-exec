@@ -18,6 +18,34 @@ claims while preserving the live process's ability to reclaim paths and correct
 work. Admission pauses during the drain and claim release. Supervisor
 cancellation permanently revokes the run, including when it races with a yield.
 
+Implementation participation lasts through mission acceptance or an operator
+stop, even when a peer has finished its files and its inbox is empty.
+`mesh_yield` returns `mayExit: false` while the mission is active or closing.
+It releases claims for review; peers then use `mesh_wait` to remain reachable in
+their existing authenticated process. This applies to every implementation
+mission, independently of its topic, agent count, time budget, or replacement
+policy. The bounded discussion profile retains its separate contribution rules.
+
+`mesh_wait` accepts an optional `sinceRevision` and a `waitMs` of 0–30,000
+(default 20,000). It returns a compact participation state and wakes for pending
+mail, shared changes, timeout, or a terminal mission. Incoming messages are
+returned without implicit acknowledgment. On timeout, wait again; on a shared
+change, inspect the board and undertake available work. Closing acceptance keeps
+`mayExit` false. Waiting revalidates run leases so fenced processes cannot remain
+participants. The supervisor can stop the process at its deadline.
+
+Board `participation.livePeerIds` includes only current, leased generations.
+Arrange reviews with live independent peers before local contributors become
+idle; available contributors can also inspect and review ready work proactively.
+A waiting peer wakes on messages without spending another launch or losing its
+context. A process that has already exited requires the runner's replacement
+path; a durable message alone cannot revive that process. These protocol rules
+guide agents but cannot prevent a crash or an agent ignoring the exit policy.
+The acceptance barrier remains the authority for completion in either case.
+
+Checkpoints require a nonempty object. Omitted or malformed bodies are rejected
+at the tool boundary before persistence.
+
 An identical `mesh_requirement` update, with the current expected revision,
 returns `unchanged: true`. It preserves the author, requirement revision, and
 coordination revision. A changed criterion, source evidence, title, anchor, or
@@ -39,6 +67,13 @@ Checkpoints now advance that revision. Knowledge searches return a full filtered
 snapshot regardless of `sinceRevision`. Review, operation, and consultation lists
 are bounded and disclose their limits; they are discovery views, not exhaustive
 acceptance proofs.
+
+Knowledge includes a `knowledgePage` count summary across all matching records.
+When `hasMore` is true, pass `nextCursor` as `mesh_board`'s `knowledgeCursor`,
+keeping the same search query, to retrieve older findings and resolved decisions.
+Use `knowledgeLimit` (1–100; default 50) to adjust page size. Explicit page
+requests return records even with an unchanged `sinceRevision`. Pages are live;
+restart from the first page if `workRevision` changes during the scan.
 
 `mesh_ack` accepts either one `deliveryId` or up to 128 `deliveryIds` sharing a
 disposition. Acknowledgments apply individually and can be safely replayed after

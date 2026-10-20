@@ -180,6 +180,77 @@ function request(messageId: string, text: string, extra: Record<string, unknown>
   });
 }
 
+test('reply and request acknowledgment commit atomically and replay without duplicate mail', async (t) => {
+  const h = await harness();
+  t.after(() => h.close());
+  const sender = h.current('A1');
+  const receiver = h.current('A2');
+  const first = await h.service.send(sender, {
+    recipientId: 'A2',
+    messageId: 'request-one',
+    text: 'Compare options.',
+  });
+  await h.service.send(sender, {
+    recipientId: 'A2',
+    messageId: 'request-two',
+    text: 'A separate question.',
+  });
+  const inbox = await h.service.poll(receiver);
+  const input = {
+    taskId: first.taskId!,
+    messageId: 'atomic-answer',
+    deliveryId: inbox.messages.find((m) => m.messageId === 'request-one')!.deliveryId,
+    text: 'First option is clearer because it separates decisions.',
+    state: 'completed' as const,
+  };
+  await assert.rejects(
+    h.service.reply(receiver, {
+      ...input,
+      deliveryId: inbox.messages.find((m) => m.messageId === 'request-two')!.deliveryId,
+    }),
+    (error: any) => error.code === 'INVALID_REPLY_DELIVERY',
+  );
+  h.failNextEvent('message.reply.accepted');
+  await assert.rejects(h.service.reply(receiver, input));
+  assert.equal((await h.service.poll(receiver)).messages.length, 2);
+  assert.equal((await h.service.poll(sender)).messages.length, 0);
+  const reply = await h.service.reply(receiver, input);
+  assert.equal(reply.acknowledgedDeliveryId, input.deliveryId);
+  assert.equal((await h.service.reply(receiver, input)).replayed, true);
+  assert.equal((await h.service.poll(receiver)).messages.length, 1);
+  assert.equal((await h.service.poll(sender)).messages.length, 1);
+  await assert.rejects(
+    h.service.reply(receiver, { ...input, deliveryId: undefined }),
+    /different payload|different content|different message/i,
+  );
+});
+
+test('inbox waits wake for mail, time out empty, and stop when the run is fenced', async (t) => {
+  const h = await harness();
+  t.after(() => h.close());
+  let settled = false;
+  const waiting = h.service.poll(h.current('A2'), { waitMs: 2000 }).then((result) => {
+    settled = true;
+    return result;
+  });
+  await h.db.query("UPDATE missions SET revision=revision+1 WHERE id='mission-a'");
+  await delay(40);
+  assert.equal(settled, false);
+  await h.service.send(h.current('A1'), {
+    recipientId: 'A2',
+    messageId: 'wake',
+    text: 'Question after waiting.',
+  });
+  assert.equal((await waiting).messages.length, 1);
+  assert.equal((await h.traceEvents()).filter((e) => e.kind === 'mailbox.polled').length, 1);
+  assert.equal((await h.service.poll(h.current('A3'), { waitMs: 5 })).messages.length, 0);
+  await assert.rejects(h.service.poll(h.current('A3'), { waitMs: -1 }), /waitMs/);
+  const fenced = h.service.poll(h.current('A3'), { waitMs: 2000 });
+  const rejection = assert.rejects(fenced, (error: any) => error.code === 'STALE_RUN');
+  h.rotate('A3');
+  await rejection;
+});
+
 test('independent A2A SDK client, durable replies, participant scope, and complete message trace', async (t) => {
   const h = await harness();
   t.after(() => h.close());

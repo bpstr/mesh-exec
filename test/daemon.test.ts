@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { setTimeout as delay } from 'node:timers/promises';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { startDaemon } from '../src/daemon.js';
@@ -13,7 +14,108 @@ import { exportMission, messages, metrics } from '../src/observer.js';
 import { readEvents } from '../src/trace.js';
 const exec = promisify(execFile);
 
-async function fixture() {
+async function waitForWaitStarted(f: Awaited<ReturnType<typeof fixture>>, count = 1) {
+  for (let i = 0; i < 100; i++) {
+    const events = await readEvents(f.db, f.daemon.missionId, { kind: 'tool.mesh_wait.started' });
+    if (events.length >= count) return;
+    await delay(10);
+  }
+  assert.fail('Peer did not enter its wait');
+}
+
+test('participation waits keep sessions live, fence expired runs, and allow terminal exit only', async (t) => {
+  const f = await fixture();
+  t.after(f.close);
+  const joined = await f.call(f.cb, 'mesh_join');
+  assert.deepEqual(joined.board.participation.livePeerIds, ['A1', 'A2']);
+  assert.equal(joined.board.participation.mayExit, false);
+  const released = await f.call(f.cb, 'mesh_yield', { reason: 'Available for later reviews' });
+  assert.equal(released.mayExit, false);
+  const timeout = await f.call(f.cb, 'mesh_wait', { waitMs: 10 });
+  assert.equal(timeout.wakeReason, 'timeout');
+  assert.equal(timeout.mayExit, false);
+  assert.equal((await f.call(f.cb, 'mesh_join')).identity.runId, f.b.principal.runId);
+
+  // A changed source/requirement must wake an available participant, even without mail.
+  const changed = f.call(f.cb, 'mesh_wait', { sinceRevision: timeout.workRevision, waitMs: 2000 });
+  await waitForWaitStarted(f, 2);
+  await f.call(f.ca, 'mesh_checkpoint', { body: { summary: 'Evidence is ready for inspection' } });
+  assert.equal((await changed).wakeReason, 'shared-work');
+
+  const fenced = f.call(f.cb, 'mesh_wait', { waitMs: 2000 });
+  const rejected = assert.rejects(fenced, /STALE_RUN/);
+  await waitForWaitStarted(f, 3);
+  await f.db.query("UPDATE runs SET lease_expires=now()-interval '1 second' WHERE id=$1", [
+    f.b.principal.runId,
+  ]);
+  await rejected;
+  const active = await f.call(f.ca, 'mesh_join');
+  assert.deepEqual(active.board.participation.livePeerIds, ['A1']);
+
+  // Closing is not permission to leave; a waiting process observes the terminal outcome.
+  await f.db.query("UPDATE missions SET state='closing' WHERE id=$1", [f.daemon.missionId]);
+  const closing = await f.call(f.ca, 'mesh_wait', { waitMs: 10 });
+  assert.equal(closing.mayExit, false);
+  assert.equal(closing.missionState, 'closing');
+  const terminal = f.call(f.ca, 'mesh_wait', { waitMs: 2000 });
+  await waitForWaitStarted(f, 5);
+  await f.db.query("UPDATE missions SET state='completed' WHERE id=$1", [f.daemon.missionId]);
+  const completed = await terminal;
+  assert.equal(completed.mayExit, true);
+  assert.equal(completed.wakeReason, 'mission-terminal');
+});
+
+test('checkpoint body is required and malformed checkpoints do not reach persistence', async (t) => {
+  const f = await fixture();
+  t.after(f.close);
+  const checkpoint = (await f.ca.listTools()).tools.find(
+    (tool) => tool.name === 'mesh_checkpoint',
+  )!;
+  assert.ok(checkpoint.inputSchema.required?.includes('body'));
+  for (const args of [{}, { body: null }, { body: {} }]) {
+    assert.equal((await f.ca.callTool({ name: 'mesh_checkpoint', arguments: args })).isError, true);
+  }
+  assert.equal((await f.db.query('SELECT id FROM checkpoints')).rowCount, 0);
+});
+
+test('board knowledge pagination bypasses unchanged snapshots and retains search filters', async (t) => {
+  const f = await fixture();
+  t.after(() => f.close());
+  for (const id of ['old', 'new', 'unrelated']) {
+    await f.call(f.ca, 'mesh_remember', {
+      id,
+      kind: 'finding',
+      title: id === 'unrelated' ? 'Unrelated' : 'Historical solution',
+      body: id,
+    });
+  }
+  const joined = await f.call(f.cb, 'mesh_join');
+  assert.equal(joined.board.knowledgePage.summary.total, 3);
+  const first = await f.call(f.cb, 'mesh_board', {
+    sinceRevision: joined.board.workRevision,
+    knowledgeLimit: 1,
+    query: 'Historical',
+  });
+  assert.equal(first.knowledge.length, 1);
+  assert.equal(first.knowledgePage.summary.total, 2);
+  const second = await f.call(f.cb, 'mesh_board', {
+    sinceRevision: first.workRevision,
+    knowledgeCursor: first.knowledgePage.nextCursor,
+    query: 'Historical',
+  });
+  assert.equal(second.knowledge.length, 1);
+  assert.notEqual(first.knowledge[0].id, second.knowledge[0].id);
+  assert.equal(second.knowledgePage.hasMore, false);
+  // A cursor-only request must also bypass sinceRevision without a search query.
+  const all = await f.call(f.cb, 'mesh_board', { knowledgeLimit: 1 });
+  const remaining = await f.call(f.cb, 'mesh_board', {
+    sinceRevision: all.workRevision,
+    knowledgeCursor: all.knowledgePage.nextCursor,
+  });
+  assert.equal(remaining.knowledge.length, 2);
+});
+
+async function fixture(workflow: 'implementation' | 'discussion' = 'implementation') {
   const directory = await mkdtemp(join(tmpdir(), 'mesh-integration-'));
   const repo = join(directory, 'repo');
   await mkdir(repo);
@@ -30,7 +132,8 @@ async function fixture() {
     repo,
     runtimeDir: join(directory, 'runtime'),
     roadmapPath: 'ROADMAP.md',
-    agents: 2,
+    agents: workflow === 'discussion' ? 3 : 2,
+    config: { workflow },
     port: 0,
     workspace: {
       commandBuilder: async (o) => ({
@@ -98,6 +201,70 @@ async function fixture() {
   };
 }
 
+test('discussion profile exposes only communication tools and gives each peer one partner', async (t) => {
+  const f = await fixture('discussion');
+  t.after(f.close);
+  assert.deepEqual((await f.ca.listTools()).tools.map((tool) => tool.name).sort(), [
+    'mesh_ack',
+    'mesh_ask',
+    'mesh_checkpoint',
+    'mesh_join',
+    'mesh_poll',
+    'mesh_reply',
+    'mesh_yield',
+  ]);
+  const ask = (await f.ca.listTools()).tools.find((tool) => tool.name === 'mesh_ask')!;
+  assert.equal(ask.inputSchema.properties?.recipientId, undefined);
+  assert.equal(ask.inputSchema.properties?.taskId, undefined);
+  assert.equal(ask.inputSchema.properties?.contextId, undefined);
+  const question = await f.call(f.ca, 'mesh_ask', {
+    messageId: 'round-question',
+    text: 'Which option is clearer?',
+  });
+  assert.equal(question.recipientId, 'A2');
+  const incoming = await f.call(f.cb, 'mesh_poll');
+  await f.call(f.cb, 'mesh_reply', {
+    taskId: question.taskId,
+    messageId: 'round-answer',
+    deliveryId: incoming.messages[0].deliveryId,
+    text: 'The first is clearer because it is shorter.',
+    state: 'completed',
+  });
+  assert.equal((await f.call(f.cb, 'mesh_poll')).messages.length, 0);
+  const answer = await f.call(f.ca, 'mesh_poll');
+  await f.call(f.ca, 'mesh_ack', { deliveryId: answer.messages[0].deliveryId });
+  const joined = await f.call(f.ca, 'mesh_join');
+  assert.equal(joined.profile, 'discussion');
+  assert.equal(joined.discussionPartner, 'A2');
+  assert.equal((await f.call(f.cb, 'mesh_join')).discussionPartner, 'A3');
+  assert.equal(joined.inbox.messages.length, 0);
+  assert.equal(joined.board, undefined);
+  assert.deepEqual(joined.checkpoints, []);
+  await assert.rejects(f.call(f.ca, 'mesh_propose_completion', { operationId: 'not-available' }));
+});
+
+test('permanent delivery failure is a tool error and a failed span, not a successful receipt', async (t) => {
+  const f = await fixture();
+  t.after(f.close);
+  await assert.rejects(
+    f.call(f.ca, 'mesh_send', {
+      recipientId: 'A2',
+      messageId: 'invalid-task',
+      taskId: 'invented-task',
+      text: 'A new request must not invent task IDs.',
+    }),
+    /DELIVERY_FAILED/,
+  );
+  const events = await readEvents(f.db, f.daemon.missionId, { limit: 2000 });
+  assert.equal(events.filter((event) => event.kind === 'tool.mesh_send.failed').length, 1);
+  assert.equal(events.filter((event) => event.kind === 'tool.mesh_send.completed').length, 0);
+  assert.equal(
+    (await f.db.query('SELECT state FROM a2a_outbox WHERE mission_id=$1', [f.daemon.missionId]))
+      .rows[0].state,
+    'failed',
+  );
+});
+
 test('independent MCP peers consult over A2A, publish in one checkout, and complete with a traced final barrier', async (t) => {
   const f = await fixture();
   t.after(f.close);
@@ -141,6 +308,11 @@ test('independent MCP peers consult over A2A, publish in one checkout, and compl
     description: 'Review counter',
   });
   assert.equal(conflict.granted, false);
+  // The reviewer stays in its original authenticated process after releasing work.
+  const releasedReviewer = await f.call(f.cb, 'mesh_yield', { reason: 'Available for review' });
+  assert.equal(releasedReviewer.mayExit, false);
+  const reviewWait = f.call(f.cb, 'mesh_wait', { waitMs: 2000 });
+  await waitForWaitStarted(f);
   const request = await f.call(f.ca, 'mesh_send', {
     recipientId: 'A2',
     messageId: 'question-1',
@@ -149,7 +321,11 @@ test('independent MCP peers consult over A2A, publish in one checkout, and compl
   });
   const consultationBoard = await f.call(f.cb, 'mesh_board');
   assert.equal(consultationBoard.consultations[0].task_id, request.taskId);
-  const incoming = consultationBoard.inbox;
+  const awakenedReviewer = await reviewWait;
+  assert.equal(awakenedReviewer.wakeReason, 'inbox');
+  assert.equal(awakenedReviewer.mayExit, false);
+  assert.equal((await f.call(f.cb, 'mesh_join')).identity.runId, f.b.principal.runId);
+  const incoming = awakenedReviewer.inbox;
   assert.equal(incoming.messages.length, 1);
   await f.call(f.cb, 'mesh_reply', {
     taskId: request.taskId,
@@ -212,7 +388,12 @@ test('independent MCP peers consult over A2A, publish in one checkout, and compl
   );
   assert.equal(reviewed.consultations.length, 0);
   assert.equal(reviewed.inbox.messages.length, 0);
-  await f.call(f.ca, 'mesh_yield', { reason: 'Implementation ready for final verification' });
+  const released = await f.call(f.ca, 'mesh_yield', {
+    reason: 'Implementation ready for final verification',
+  });
+  assert.equal(released.mayExit, false);
+  const acceptanceWait = f.call(f.cb, 'mesh_wait', { waitMs: 2000 });
+  await waitForWaitStarted(f, 2);
   const proposal = await f.call(f.ca, 'mesh_propose_completion', {
     operationId: 'finish-1',
     checks: [
@@ -231,6 +412,7 @@ test('independent MCP peers consult over A2A, publish in one checkout, and compl
     'completed',
     JSON.stringify(await f.daemon.completion.status(mission.id, 'finish-1')),
   );
+  assert.equal((await acceptanceWait).mayExit, true);
   const events = await readEvents(f.db, mission.id, { limit: 2000 });
   assert.ok(events.some((e) => e.kind === 'mission.completed'));
   assert.ok(events.some((e) => e.kind === 'completion.proposal.completed'));

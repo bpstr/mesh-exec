@@ -1,5 +1,48 @@
 # Shared coordination
 
+## Compact observation and ready work
+
+Use `mesh digest --mission ID` or `mesh_digest` for routine observation. The
+response contains counts, changed event kinds, reported usage and bounded artifact
+references. Pass its cursor as `after` (`--after` in the CLI). Observation-only
+tool traffic does not cause another full response; unchanged responses omit counts.
+Messages, checkpoints, handoffs and log bodies are never part of this feed.
+
+Peers declare independent bundles in batches with `mesh_work`. Each bundle names
+target requirement IDs, its complete resource bundle and any prerequisite IDs
+with exact revisions in `requires`. Requirements must exist first. The tool
+reports ready, claimed, blocked and implemented bundles and a conservative disjoint
+frontier. Prerequisite state or revision changes block claims and publication;
+inspect new evidence before updating pins. Cycles and duplicate target ownership
+are rejected atomically. This is implementation readiness, not final acceptance.
+
+Once a plan exists, file claims require `workId` and the complete declared bundle.
+Existing claims are preserved. The runner limits new generations to the declared
+independent frontier plus active claim owners and one review/integration seat,
+with a minimum of two peers. Before any bundles exist, the configured population
+applies. Live peers are never killed merely to shrink capacity. Work discovery
+remains peer-selected; there is no parent LLM dispatcher. Plan listings paginate
+in 50-item summary pages; pass `ids` (up to ten) for complete selected bundles.
+Declaration batches are capped at 64 KiB. Mission exports retain the plan in `work.json`.
+
+## Batched coordination
+
+Identical current checkpoints reuse their record without changing the work
+revision. A different intervening checkpoint makes a repeated earlier body a new
+change. Valid passing requirement reviews on the exact revision and source
+manifest are reused; coverage reviews retain distinct reviewer identities.
+Unresolved objections prevent reuse from hiding a required correction.
+
+Identical open consultations to the same peer reuse their original message and
+task IDs, even when retried with another message ID. A terminal consultation does
+not prevent a later new request. Use the returned IDs. Pure status offers are
+board/checkpoint updates; a consultation offer requires `actionRequired`.
+Checkpoints and outgoing consultations are limited to 16 KiB, and review reasoning
+to 8,192 characters. Store full evidence in artifacts and send references. These controls do
+not classify semantic duplicates or judge the meaning of an agent's request.
+
+## Board details
+
 The board defaults to `detail: "summary"` for routine coordination. Requirements
 retain their criteria, revision, author and state, with `evidenceCount` in place
 of repeated evidence. Passing review reasoning is omitted; objection reasoning

@@ -52,6 +52,13 @@ CREATE TABLE IF NOT EXISTS claims (
   PRIMARY KEY(mission_id,id)
 );
 CREATE INDEX IF NOT EXISTS claims_live ON claims(mission_id,state);
+ALTER TABLE claims ADD COLUMN IF NOT EXISTS work_id text;
+CREATE TABLE IF NOT EXISTS work_items (
+  mission_id text NOT NULL REFERENCES missions(id), id text NOT NULL,
+  title text NOT NULL, resources jsonb NOT NULL, requirement_ids jsonb NOT NULL,
+  requires jsonb NOT NULL DEFAULT '{}', revision integer NOT NULL DEFAULT 1,
+  PRIMARY KEY(mission_id,id)
+);
 CREATE TABLE IF NOT EXISTS knowledge (
   mission_id text NOT NULL REFERENCES missions(id), id text NOT NULL, revision integer NOT NULL DEFAULT 1,
   kind text NOT NULL, title text NOT NULL, body text NOT NULL, agent_id text NOT NULL, run_id text NOT NULL,
@@ -80,6 +87,8 @@ CREATE TABLE IF NOT EXISTS reviews (
   manifest_hash text NOT NULL, coverage_hash text, verdict text NOT NULL, reasoning text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+CREATE INDEX IF NOT EXISTS checkpoints_run ON checkpoints(mission_id,run_id,created_at);
+CREATE INDEX IF NOT EXISTS reviews_scope ON reviews(mission_id,manifest_hash,kind,target_id,target_revision,agent_id,created_at);
 CREATE TABLE IF NOT EXISTS verifications (
   id text PRIMARY KEY, mission_id text NOT NULL REFERENCES missions(id), manifest_hash text NOT NULL,
   results jsonb NOT NULL, passed boolean NOT NULL, created_at timestamptz NOT NULL DEFAULT now()

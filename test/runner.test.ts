@@ -243,6 +243,39 @@ async function fixture(mode = 'normal'): Promise<{
   };
 }
 
+test('declared independent work caps new generations without oversubscribing admission', async () => {
+  const f = await fixture();
+  try {
+    f.options.concurrency = 5;
+    f.options.maxRuns = 6;
+    f.options.store.workCapacity = async () => 2;
+    let peak = 0;
+    const start = f.options.spawn!;
+    f.options.spawn = (command, args, options) => {
+      peak = Math.max(peak, f.store.live.size);
+      assert.ok(f.store.live.size <= 2);
+      return start(command, args, options);
+    };
+    const result = await runMesh(f.options);
+    assert.equal(result.runsStarted, 6);
+    assert.equal(peak, 2);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('capacity lookups cannot race beyond the shared maximum run budget', async () => {
+  const f = await fixture();
+  try {
+    f.options.concurrency = 5;
+    f.options.maxRuns = 1;
+    f.options.store.workCapacity = async () => 2;
+    assert.equal((await runMesh(f.options)).runsStarted, 1);
+  } finally {
+    await f.cleanup();
+  }
+});
+
 test('N peers use fresh generations, enforce population/run limits and retain redacted complete output', async () => {
   const f = await fixture();
   try {

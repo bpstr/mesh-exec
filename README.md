@@ -216,6 +216,8 @@ Observation commands query PostgreSQL directly, so they remain usable after the 
 
 ```bash
 mesh status --mission MISSION_ID
+mesh digest --mission MISSION_ID
+mesh digest --mission MISSION_ID --after CURSOR
 mesh trace --mission MISSION_ID --follow
 mesh messages --mission MISSION_ID --agent A1 --pending
 mesh logs --mission MISSION_ID --run RUN_ID --stream stderr

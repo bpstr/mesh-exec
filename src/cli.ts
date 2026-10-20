@@ -13,7 +13,15 @@ import { preflightCodex } from './codex.js';
 import { assertSandboxAvailable } from './sandbox.js';
 import { hash } from './store.js';
 import { readEvents, redact, registerSecret, type TraceFilter } from './trace.js';
-import { status, messages, metrics, logPath, exportEvents, exportMission } from './observer.js';
+import {
+  status,
+  digest,
+  messages,
+  metrics,
+  logPath,
+  exportEvents,
+  exportMission,
+} from './observer.js';
 import { invariant } from './types.js';
 
 const HELP = `mesh-exec — independent Codex peers in one shared checkout
@@ -26,6 +34,7 @@ Run:
 
 Observe (works after the runner stops):
   mesh status --mission <id>
+  mesh digest --mission <id> [--after <cursor>]
   mesh trace --mission <id> --follow [--agent A1] [--run <id>] [--task <id>]
   mesh messages --mission <id> [--agent A1] [--task <id>] [--pending]
   mesh logs --mission <id> --run <id> [--stream stderr] [--follow]
@@ -354,6 +363,12 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     invariant(missionId, 'MISSION_REQUIRED', 'Specify --mission <id>');
     if (command === 'status') {
       process.stdout.write(JSON.stringify(redact(await status(db, missionId)), null, 2) + '\n');
+      return;
+    }
+    if (command === 'digest') {
+      process.stdout.write(
+        JSON.stringify(redact(await digest(db, missionId, values.after)), null, 2) + '\n',
+      );
       return;
     }
     if (command === 'metrics') {

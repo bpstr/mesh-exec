@@ -59,6 +59,7 @@ export interface RunEnd {
 
 /** The store fences generations. The runner never assigns roadmap work. */
 export interface RunnerStore {
+  workCapacity?(missionId: string): Promise<number | null>;
   acquireSupervisor(input: {
     missionId: string;
     supervisorId: string;
@@ -391,6 +392,7 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
   const supervisorId = randomUUID();
   const controller = new AbortController();
   const active = new Map<string, Principal>();
+  let pendingAllocations = 0;
   let abortState: 'stopped' | 'resource-limit' | 'stalled' = 'stopped';
   let abortReason = 'Runner stopped';
   let fatal: unknown;
@@ -838,6 +840,18 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
       const observed = await waitForAdmission();
       if (!observed) return;
       if (runsStarted >= maxRuns) return;
+      const capacity = await options.store.workCapacity?.(options.missionId);
+      if (controller.signal.aborted || draining || runsStarted >= maxRuns) return;
+      if (capacity != null && active.size + pendingAllocations >= capacity) {
+        await options.store.waitForRevision(
+          options.missionId,
+          observed.workRevision,
+          idlePollMs,
+          controller.signal,
+        );
+        continue;
+      }
+      pendingAllocations++;
       runsStarted += 1; // Reserve synchronously before awaiting allocation.
       let allocation: RunAllocation;
       try {
@@ -852,6 +866,8 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
           continue;
         }
         throw error;
+      } finally {
+        pendingAllocations--;
       }
       active.set(agentId, allocation.principal);
       let end: RunEnd;

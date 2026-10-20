@@ -3,6 +3,231 @@ import assert from 'node:assert/strict';
 import { Store, covers, overlaps } from '../src/store.js';
 import { readEvents, redact } from '../src/trace.js';
 import { TestDatabase } from './helpers.js';
+import { declareWork, workState } from '../src/planning.js';
+
+test('work plans gate prerequisites, revisions, complete resource bundles and independent capacity', async (t) => {
+  const s = await setup();
+  t.after(() => s.db.close());
+  await assert.rejects(
+    s.store.claim(s.a.principal, {
+      id: 'unknown',
+      resources: ['a.ts'],
+      description: 'unknown work',
+      workId: 'missing',
+    }),
+    /No such work/,
+  );
+  for (const id of ['a', 'b', 'c'])
+    await s.store.requirement(s.a.principal, {
+      id,
+      anchor: 'Implement',
+      title: id,
+      criteria: ['source delivered'],
+    });
+  const a = { id: 'wa', title: 'a', resources: ['a.ts', 'shared.ts'], requirementIds: ['a'] };
+  await assert.rejects(
+    declareWork(s.store, s.a.principal, [{ ...a, title: 'x'.repeat(70000) }]),
+    /64 KiB/,
+  );
+  const b = { id: 'wb', title: 'b', resources: ['shared.ts'], requirementIds: ['b'] };
+  const c = {
+    id: 'wc',
+    title: 'c',
+    resources: ['c.ts'],
+    requirementIds: ['c'],
+    requires: { a: 1 },
+  };
+  await declareWork(s.store, s.a.principal, [a, b, c]);
+  assert.deepEqual((await workState(s.db, s.mission.id)).independentReadyIds, ['wa']);
+  assert.equal((await workState(s.db, s.mission.id)).admissionLimit, 2);
+  await assert.rejects(
+    s.store.claim(s.b.principal, {
+      id: 'blocked',
+      resources: c.resources,
+      description: 'c',
+      workId: 'wc',
+    }),
+    /waiting on prerequisites/,
+  );
+  await assert.rejects(
+    s.store.claim(s.b.principal, { id: 'unplanned', resources: ['other.ts'], description: 'none' }),
+    /ready bundle/,
+  );
+  await assert.rejects(
+    s.store.claim(s.a.principal, {
+      id: 'partial',
+      resources: ['a.ts'],
+      description: 'a',
+      workId: 'wa',
+    }),
+    /complete declared bundle/,
+  );
+  await s.store.claim(s.a.principal, {
+    id: 'a-claim',
+    resources: a.resources,
+    description: 'a',
+    workId: 'wa',
+  });
+  assert.equal(
+    (
+      (await s.store.claim(s.b.principal, {
+        id: 'conflict',
+        resources: b.resources,
+        description: 'b',
+        workId: 'wb',
+      })) as any
+    ).granted,
+    false,
+  );
+  await s.store.requirement(s.a.principal, {
+    id: 'a',
+    anchor: 'Implement',
+    title: 'a',
+    criteria: ['source delivered'],
+    expectedRevision: 1,
+    state: 'implemented',
+    evidence: [{ criterion: 0, description: 'prepared source fixture' }],
+  });
+  assert.equal(
+    (await workState(s.db, s.mission.id)).items.find((i) => i.id === 'wc')!.state,
+    'blocked',
+  );
+  await declareWork(s.store, s.a.principal, [{ ...c, expectedRevision: 1, requires: { a: 2 } }]);
+  await s.store.claim(s.b.principal, {
+    id: 'c-claim',
+    resources: c.resources,
+    description: 'c',
+    workId: 'wc',
+  });
+  await s.store.authorize(s.b.principal, ['c.ts'], 'publish', 'c-claim');
+  await s.store.requirement(s.a.principal, {
+    id: 'a',
+    anchor: 'Implement',
+    title: 'a changed',
+    criteria: ['source delivered'],
+    expectedRevision: 2,
+    state: 'open',
+  });
+  await assert.rejects(
+    s.store.authorize(s.b.principal, ['c.ts'], 'late-publish', 'c-claim'),
+    /waiting on prerequisites/,
+  );
+  await assert.rejects(
+    declareWork(s.store, s.a.principal, [
+      { id: 'duplicate', title: 'dup', resources: ['dup.ts'], requirementIds: ['a'] },
+    ]),
+    /one work bundle/,
+  );
+  await s.store.yield(s.a.principal, 'release');
+  await s.store.yield(s.b.principal, 'release');
+  await assert.rejects(
+    declareWork(s.store, s.a.principal, [
+      { ...a, expectedRevision: 1, requires: { c: 1 } },
+      { ...c, expectedRevision: 2, requires: { a: 3 } },
+    ]),
+    /cycle/,
+  );
+  assert.deepEqual(
+    (await workState(s.db, s.mission.id)).items.find((i) => i.id === 'wa')!.requires,
+    {},
+  );
+});
+
+test('work metadata migration preserves legacy claims and unplanned mission capacity', async (t) => {
+  const s = await setup();
+  t.after(() => s.db.close());
+  await s.store.claim(s.a.principal, {
+    id: 'legacy',
+    resources: ['legacy.ts'],
+    description: 'existing source',
+  });
+  await s.db.query('DROP TABLE work_items');
+  await s.db.query('ALTER TABLE claims DROP COLUMN work_id');
+  await s.store.initialize();
+  assert.equal(await s.store.workCapacity(s.mission.id), null);
+  await s.store.authorize(s.a.principal, ['legacy.ts'], 'legacy-publish', 'legacy');
+  const claim = (await s.store.claim(s.a.principal, {
+    id: 'legacy',
+    resources: ['legacy.ts'],
+    description: 'existing source',
+  })) as any;
+  assert.equal(claim.run_id, s.a.principal.runId);
+});
+
+test('unchanged checkpoints and passing reviews reuse records without waking peers', async (t) => {
+  const s = await setup();
+  t.after(() => s.db.close());
+  const first = await s.store.checkpoint(s.a.principal, { summary: 'coherent slice' }, 'z-first');
+  const before = await s.store.observe(s.mission.id);
+  const repeated = await s.store.checkpoint(s.a.principal, { summary: 'coherent slice' });
+  assert.equal(repeated.id, first.id);
+  assert.equal(repeated.unchanged, true);
+  assert.deepEqual(await s.store.observe(s.mission.id), before);
+  await s.store.checkpoint(s.a.principal, { summary: 'different slice' }, 'a-next');
+  await s.db.query("UPDATE checkpoints SET created_at='2000-01-01' WHERE mission_id=$1", [
+    s.mission.id,
+  ]);
+  assert.notEqual(
+    (await s.store.checkpoint(s.a.principal, { summary: 'coherent slice' })).id,
+    first.id,
+  );
+  await assert.rejects(s.store.checkpoint(s.a.principal, { log: 'x'.repeat(17000) }), /16 KiB/);
+  await s.store.requirement(s.a.principal, {
+    id: 'r',
+    anchor: 'Implement',
+    title: 'r',
+    criteria: ['source delivered'],
+  });
+  const review = {
+    id: 'one',
+    kind: 'requirement' as const,
+    targetId: 'r',
+    targetRevision: 1,
+    manifestHash: 'a'.repeat(64),
+    verdict: 'pass' as const,
+    reasoning: 'prepared source review',
+  };
+  await s.store.review(s.b.principal, review);
+  const reviewed = await s.store.observe(s.mission.id);
+  assert.deepEqual(await s.store.review(s.b.principal, { ...review, id: 'two' }), {
+    id: 'one',
+    reused: true,
+  });
+  assert.deepEqual(await s.store.observe(s.mission.id), reviewed);
+  await s.store.review(s.b.principal, {
+    ...review,
+    id: 'objection',
+    verdict: 'objection',
+    reasoning: 'correction required',
+  });
+  assert.equal(
+    (await s.store.review(s.b.principal, { ...review, id: 'correction' })).reused,
+    false,
+  );
+  assert.equal(
+    (
+      await s.store.review(s.b.principal, {
+        ...review,
+        id: 'new-source',
+        manifestHash: 'b'.repeat(64),
+      })
+    ).reused,
+    false,
+  );
+  await assert.rejects(s.store.review(s.a.principal, { ...review, id: 'own' }), /different peer/);
+  const coverage = {
+    id: 'coverage-a',
+    kind: 'coverage' as const,
+    manifestHash: 'a'.repeat(64),
+    verdict: 'pass' as const,
+    reasoning: 'prepared coverage',
+  };
+  await s.store.review(s.a.principal, coverage);
+  assert.equal(
+    (await s.store.review(s.b.principal, { ...coverage, id: 'coverage-b' })).reused,
+    false,
+  );
+});
 
 test('yield preserves work that arrived after the last observation without self-waking on claim release', async (t) => {
   const s = await setup();

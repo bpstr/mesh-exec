@@ -4,7 +4,7 @@ Run independent Codex CLI peers against one roadmap and one shared Git checkout.
 
 Each stable slot, such as `A1`, runs successive finite Codex processes. A new process receives a fresh credential and generation, then recovers its context from the roadmap, shared board, inbox, and handoffs. PostgreSQL holds coordination memory and durable A2A state. There is no parent LLM assigning work, no queue of roadmap fragments, and no worktree per agent.
 
-**Status: experimental implementation.** Automated tests exercise the protocol, persistence, process lifecycle, and workspace controls. The required help/version flags were checked against the real **Codex CLI 0.163.0** binary. An authenticated live Codex population has not yet been exercised by this project, and 50/100-agent throughput has not been measured. Start with a small controlled pilot on a qualified Linux host. See [development and qualification](docs/development.md) for the validation workflow.
+**Status: experimental implementation.** Automated tests exercise the protocol, persistence, process lifecycle, and workspace controls. The required help/version flags were checked against the real **Codex CLI 0.163.0** binary. An authenticated live Codex population has not yet been exercised by this project, and 50/100-agent throughput has not been measured. Start with a small controlled pilot on a qualified Linux or macOS host. See [development and qualification](docs/development.md) for the validation workflow.
 
 ## How it works
 
@@ -28,7 +28,7 @@ Long commands run behind durable operation handles. Source changes go through on
 
 | Component      | Requirement                                                                                      |
 | -------------- | ------------------------------------------------------------------------------------------------ |
-| Host           | Linux with working bubblewrap namespaces and `flock`                                             |
+| Host           | Linux with bubblewrap and `flock`, or macOS with `sandbox-exec` and Python 3                     |
 | Runtime        | Node.js **22.16 or newer**, npm, and Git                                                         |
 | Agent CLI      | An installed Codex CLI with the flags checked by `mesh doctor`                                   |
 | Authentication | An existing usable Codex CLI login                                                               |
@@ -37,7 +37,7 @@ Long commands run behind durable operation handles. Source changes go through on
 
 PostgreSQL is the only additional service. It stores the message board, versioned knowledge and dependency links, task and delivery state, leases, operation metadata, and trace events. PostgreSQL full-text search powers board queries; this version does not require an embedding service or separate graph database.
 
-The enforced worker boundary requires `bwrap`, not merely an installed executable with that name. `mesh doctor` actually attempts to create the required namespace. Restricted containers or hosts may reject this. The runner stops when qualification fails; it does not fall back to unrestricted execution.
+The worker boundary uses bubblewrap on Linux and Seatbelt (`sandbox-exec`) on macOS. `mesh doctor` actually launches the sandbox; the runner stops if qualification fails. Both platforms enforce source and private audit-file access. Linux also isolates process IDs; macOS cleanup requires cooperative commands to remain in their process group. On macOS the outer sandbox supplies the file boundary, so Codex does not try to nest a second Seatbelt sandbox. Python 3 supplies the OS-held checkout lock through `fcntl.flock`; no VM is required.
 
 ### Install the host dependencies
 

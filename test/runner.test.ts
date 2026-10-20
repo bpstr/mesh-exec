@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -146,7 +146,7 @@ async function fixture(mode = 'normal'): Promise<{
   children: ChildProcessWithoutNullStreams[];
   cleanup: () => Promise<void>;
 }> {
-  const base = await mkdtemp(join(tmpdir(), 'mesh-runner-'));
+  const base = await realpath(await mkdtemp(join(tmpdir(), 'mesh-runner-')));
   const repository = join(base, 'repository');
   const home = join(base, 'codex-home');
   await Promise.all([mkdir(repository), mkdir(home)]);
@@ -258,7 +258,7 @@ test('N peers use fresh generations, enforce population/run limits and retain re
     assert.equal(summary.runsStarted, 7);
     assert.equal(summary.runsFinished, 7);
     assert.equal(summary.state, 'resource-limit');
-    assert.equal(peak, 3);
+    assert.equal(peak, 3, JSON.stringify(f.store.ends.map((run) => run.end.error)));
     assert.equal(live, 0);
     assert.ok(f.store.allocations.some((run) => run.principal.generation > 1));
     assert.equal(new Set(f.store.allocations.map((run) => run.token)).size, 7);

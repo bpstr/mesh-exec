@@ -288,9 +288,9 @@ export class Workspace {
 
   static async open(options: WorkspaceOptions): Promise<Workspace> {
     invariant(
-      process.platform === 'linux',
+      process.platform === 'linux' || process.platform === 'darwin',
       'unsupported_platform',
-      'Workspace writer locking currently requires Linux.',
+      'Workspace writer locking requires Linux or macOS.',
     );
     invariant(
       Number.isInteger(options.maxCommands ?? 2) && (options.maxCommands ?? 2) > 0,
@@ -328,7 +328,14 @@ export class Workspace {
     );
     try {
       await new Promise<void>((accept, reject) => {
-        const child = spawn('flock', ['--nonblock', '3'], {
+        // flock(2) locks the inherited open file description on both platforms.
+        // The parent retains that description until Workspace.close().
+        const command = process.platform === 'darwin' ? 'python3' : 'flock';
+        const args =
+          process.platform === 'darwin'
+            ? ['-c', 'import fcntl; fcntl.flock(3, fcntl.LOCK_EX | fcntl.LOCK_NB)']
+            : ['--nonblock', '3'];
+        const child = spawn(command, args, {
           stdio: ['ignore', 'ignore', 'pipe', lock.fd],
         });
         let message = '';

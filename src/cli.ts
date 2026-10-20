@@ -135,7 +135,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
       realpath(repo),
     ]);
     const checks = results.map((result, index) => ({
-      check: ['codex', 'linux-sandbox', 'repository'][index],
+      check: ['codex', 'os-sandbox', 'repository'][index],
       ok: result.status === 'fulfilled',
       ...(result.status === 'fulfilled'
         ? { detail: result.value }

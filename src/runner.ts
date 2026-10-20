@@ -470,6 +470,7 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
       codexBinary: options.codexBinary,
       model: options.model,
       environment,
+      externallySandboxed: process.platform === 'darwin',
     });
     const secrets = [...globalSecrets, allocation.token];
     const runEmit = (input: TraceInput): Promise<unknown> =>
@@ -533,6 +534,11 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
         ...new Set([workerDirectory, codexHome, ...(options.runtimeWritablePaths ?? [])]),
       ];
       for (const path of writablePaths) await mkdir(path, { recursive: true, mode: 0o700 });
+      if (process.platform === 'darwin') {
+        const temporary = join(workerDirectory, 'tmp');
+        await mkdir(temporary, { mode: 0o700 });
+        Object.assign(invocation.env, { TMPDIR: temporary, TMP: temporary, TEMP: temporary });
+      }
       const hiddenPaths = [...new Set([logRoot, ...(options.hiddenPaths ?? [])])];
       for (const writable of writablePaths) {
         for (const hidden of hiddenPaths) {
@@ -584,12 +590,12 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
         stdio: ['pipe', 'pipe', 'pipe'],
         shell: false,
       });
-      const process = child;
+      const workerProcess = child;
       closed = new Promise<ProcessExit>((resolveClose) => {
-        process.once('error', (error) => {
+        workerProcess.once('error', (error) => {
           processFailure = error;
         });
-        process.once('close', (code, signal) =>
+        workerProcess.once('close', (code, signal) =>
           resolveClose({ code, signal, ...(processFailure ? { error: processFailure } : {}) }),
         );
       });

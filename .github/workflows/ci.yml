@@ -55,3 +55,22 @@ jobs:
       - run: npm test
       - name: Check built CLI entry point
         run: node dist/cli.js --help
+
+  macos:
+    name: Node 24 / macOS sandbox
+    runs-on: macos-latest
+    timeout-minutes: 10
+    env:
+      MESH_REQUIRE_SANDBOX: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: node dist/cli.js --help

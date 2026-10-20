@@ -33,34 +33,36 @@ export function isWithin(parent: string, child: string): boolean {
 
 let qualification: Promise<void> | undefined;
 
-/** An installed binary is not proof that the host permits its namespaces. */
+/** An installed binary is not proof that the host permits its sandbox. */
 export function assertSandboxAvailable(): Promise<void> {
   qualification ??= new Promise<void>((accept, reject) => {
-    if (process.platform !== 'linux') {
+    if (process.platform !== 'linux' && process.platform !== 'darwin') {
       reject(
         new MeshError(
           'sandbox_unavailable',
-          'The enforced worker boundary currently requires Linux and bubblewrap.',
+          'The enforced worker boundary requires Linux/bubblewrap or macOS/sandbox-exec.',
         ),
       );
       return;
     }
     const child = spawn(
-      'bwrap',
-      [
-        '--die-with-parent',
-        '--unshare-pid',
-        '--unshare-net',
-        '--ro-bind',
-        '/',
-        '/',
-        '--proc',
-        '/proc',
-        '--dev',
-        '/dev',
-        '--',
-        '/bin/true',
-      ],
+      process.platform === 'darwin' ? '/usr/bin/sandbox-exec' : 'bwrap',
+      process.platform === 'darwin'
+        ? ['-p', '(version 1)(allow default)(deny file-write*)', '/usr/bin/true']
+        : [
+            '--die-with-parent',
+            '--unshare-pid',
+            '--unshare-net',
+            '--ro-bind',
+            '/',
+            '/',
+            '--proc',
+            '/proc',
+            '--dev',
+            '/dev',
+            '--',
+            '/bin/true',
+          ],
       { stdio: ['ignore', 'ignore', 'pipe'], detached: true },
     );
     let diagnostic = '';
@@ -73,11 +75,11 @@ export function assertSandboxAvailable(): Promise<void> {
       } catch {
         /* close/error carries the failure */
       }
-      reject(new MeshError('sandbox_unavailable', 'Bubblewrap qualification timed out.'));
+      reject(new MeshError('sandbox_unavailable', 'Sandbox qualification timed out.'));
     }, 8000);
     child.once('error', (error) => {
       clearTimeout(timer);
-      reject(new MeshError('sandbox_unavailable', `Cannot launch bubblewrap: ${error.message}`));
+      reject(new MeshError('sandbox_unavailable', `Cannot launch sandbox: ${error.message}`));
     });
     child.once('close', (code) => {
       clearTimeout(timer);
@@ -86,7 +88,7 @@ export function assertSandboxAvailable(): Promise<void> {
         reject(
           new MeshError(
             'sandbox_unavailable',
-            'The host cannot create the required bubblewrap namespace.',
+            'The host cannot create the required operating-system sandbox.',
             { diagnostic, code },
           ),
         );
@@ -130,6 +132,46 @@ export async function buildSandboxInvocation(options: SandboxOptions): Promise<S
     );
   }
 
+  // In particular, a daemon's DATABASE_URL and other credentials are not inherited.
+  const env: NodeJS.ProcessEnv = {};
+  for (const key of ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TZ', 'TERM']) {
+    if (process.env[key] !== undefined) env[key] = process.env[key];
+  }
+  Object.assign(env, options.env ?? {});
+
+  if (process.platform === 'darwin') {
+    // Seatbelt rules apply to descendants too. Denies on private state and Git
+    // override broader writable grants. JSON quoting also escapes SBPL strings.
+    const subpath = (path: string) => `(subpath ${JSON.stringify(path)})`;
+    const profile = [
+      '(version 1)',
+      '(allow default)',
+      '(deny file-write*)',
+      '(allow file-write* (literal "/dev/null") (literal "/dev/tty"))',
+      ...writablePaths.map((path) => `(allow file-write* ${subpath(path)})`),
+    ];
+    if (options.sourceWritable) profile.push(`(allow file-write* ${subpath(repo)})`);
+    profile.push(`(deny file-write* ${subpath(resolve(repo, '.git'))})`);
+    for (const path of options.readOnlyPaths ?? [])
+      profile.push(`(deny file-write* ${subpath(await realpath(path))})`);
+    for (const path of hiddenPaths) {
+      const hidden = await realpath(path);
+      const exceptions = writablePaths.filter((writable) => isWithin(hidden, writable));
+      const filter = exceptions.length
+        ? `(require-all ${subpath(hidden)} (require-not (require-any ${exceptions.map(subpath).join(' ')})))`
+        : subpath(hidden);
+      profile.push(`(deny file-read* file-write* ${filter})`);
+    }
+    if (!options.network) profile.push('(deny network*)');
+    return {
+      command: '/usr/bin/sandbox-exec',
+      args: ['-p', profile.join('\n'), ...options.argv],
+      cwd,
+      env,
+      detached: true,
+    };
+  }
+
   const args = [
     '--die-with-parent',
     '--unshare-pid',
@@ -161,19 +203,14 @@ export async function buildSandboxInvocation(options: SandboxOptions): Promise<S
   for (const path of writablePaths) args.push('--bind', path, path);
   args.push('--chdir', cwd, '--', ...options.argv);
 
-  // In particular, a daemon's DATABASE_URL and other credentials are not inherited.
-  const env: NodeJS.ProcessEnv = {};
-  for (const key of ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TZ', 'TERM']) {
-    if (process.env[key] !== undefined) env[key] = process.env[key];
-  }
-  Object.assign(env, options.env ?? {});
   return { command: 'bwrap', args, cwd, env, detached: true };
 }
 
 /**
  * Callers must attach their own `close` listener immediately when spawning.
- * The child must be a detached bubblewrap leader: killing its PID namespace also
- * terminates descendants which have changed their process group or session.
+ * The child must lead a detached process group. Linux additionally has a PID
+ * namespace, which terminates descendants that change groups or sessions.
+ * macOS supervises cooperative commands that remain in their process group.
  */
 export async function terminateProcessTree(
   child: ChildProcess,

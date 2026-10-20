@@ -3,13 +3,15 @@
 The automated suite exercises the coordination service, runner lifecycle,
 workspace ownership, and trace persistence with controlled agents and commands.
 A recorded live pilot is still required to qualify a particular Codex version,
-login, model, Linux host, and target repository.
+login, model, host, and target repository.
 
 ## Local development
 
-Use Node.js 22.16 or later and npm. Running actual coding workers requires Linux
-with working bubblewrap namespaces. Install the host package using your normal
-package manager; on Ubuntu, the package is `bubblewrap`.
+Use Node.js 22.16 or later and npm. Running actual coding workers requires Linux with working bubblewrap namespaces,
+or macOS with `sandbox-exec` and Python 3. On Ubuntu install `bubblewrap` and
+`util-linux`; macOS uses Python's `fcntl.flock` for the same OS-held writer lock.
+The macOS sandbox enforces file access for descendants, while process cleanup
+requires cooperative commands that do not detach into a new process group.
 
 From the mesh-exec checkout:
 
@@ -22,8 +24,8 @@ node dist/cli.js --help
 
 Tests do not require a Codex login or invoke a paid model. Runner tests launch
 temporary Node.js fixtures through injected process adapters. The real
-bubblewrap test reports an explicit skip on a local host without namespace
-support. Require that test to pass when qualifying a Linux execution host:
+OS sandbox test reports an explicit skip on a local host without namespace
+support. Require that test to pass when qualifying an execution host:
 
 ```sh
 MESH_REQUIRE_SANDBOX=1 npm test
@@ -98,7 +100,7 @@ node dist/cli.js doctor --config /absolute/path/to/mesh.local.json
 ```
 
 The doctor checks the installed CLI's advertised flags, repository access,
-PostgreSQL connectivity, and Linux confinement. It does not start a model turn
+PostgreSQL connectivity, and OS sandbox availability. It does not start a model turn
 or prove that authentication and every model capability work together. Explicit
 `mesh_poll` is the default mailbox integration. The separate `mailbox-hook`
 adapter requires local hook configuration and trust qualification before use;

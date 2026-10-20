@@ -39,6 +39,8 @@ export interface CodexInvocationOptions {
   codexBinary?: string;
   model?: string;
   environment?: NodeJS.ProcessEnv;
+  /** macOS cannot nest Seatbelt sandboxes; the runner supplies the outer boundary. */
+  externallySandboxed?: boolean;
 }
 
 export interface CodexInvocation {
@@ -102,7 +104,7 @@ export function buildCodexInvocation(options: CodexInvocationOptions): CodexInvo
     '--cd',
     cwd,
     '--sandbox',
-    'read-only',
+    options.externallySandboxed ? 'danger-full-access' : 'read-only',
     '--strict-config',
     '--ephemeral',
     '-c',

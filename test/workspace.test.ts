@@ -436,7 +436,7 @@ test('an admission delayed by sandbox qualification cannot cross a final barrier
   }
 });
 
-test('real bubblewrap forbids source writes and does not silently fall back', async (t) => {
+test('real OS sandbox forbids source writes and does not silently fall back', async (t) => {
   try {
     await assertSandboxAvailable();
   } catch (error: any) {

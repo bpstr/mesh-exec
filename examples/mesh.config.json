@@ -1,0 +1,16 @@
+{
+  "repo": "/absolute/path/to/your/repository",
+  "roadmap": "ROADMAP.md",
+  "stateDir": "/absolute/path/to/private/mesh-state",
+  "agents": 10,
+  "maxRuns": 100,
+  "maxMinutes": 120,
+  "runMinutes": 20,
+  "heavyCommands": 2,
+  "codexBinary": "codex",
+  "port": 7331,
+  "verification": [
+    ["npm", "run", "typecheck"],
+    ["npm", "test"]
+  ]
+}

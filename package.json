@@ -1,0 +1,46 @@
+{
+  "name": "mesh-exec",
+  "version": "0.1.0",
+  "description": "Independent Codex CLI peers with durable A2A coordination in one shared checkout",
+  "type": "module",
+  "bin": {
+    "mesh": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "docs",
+    "examples"
+  ],
+  "engines": {
+    "node": ">=22.16"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "format": "prettier --write src test docs examples README.md package.json tsconfig.json .github compose.yaml",
+    "format:check": "prettier --check src test docs examples README.md package.json tsconfig.json .github compose.yaml",
+    "test": "node --import tsx --test --test-concurrency=1 test/*.test.ts",
+    "check": "npm run typecheck && npm test",
+    "dev": "tsx src/cli.ts",
+    "prepack": "npm run build"
+  },
+  "license": "MIT",
+  "repository": "github:bpstr/mesh-exec",
+  "dependencies": {
+    "@a2a-js/sdk": "1.3.0",
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "express": "^5.2.1",
+    "pg": "^8.16.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.3.14",
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.10.0",
+    "@types/pg": "^8.15.6",
+    "prettier": "^3.9.10",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

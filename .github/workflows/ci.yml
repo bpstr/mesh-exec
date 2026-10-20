@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Node ${{ matrix.node }} / PostgreSQL 17 / Linux sandbox
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '24']
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_USER: mesh_test
+          POSTGRES_PASSWORD: mesh-ci-only
+          POSTGRES_DB: mesh_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mesh_test -d mesh_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgresql://mesh_test:mesh-ci-only@127.0.0.1:5432/mesh_test
+      MESH_REQUIRE_SANDBOX: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - name: Install Linux confinement dependency
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends bubblewrap
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - name: Check built CLI entry point
+        run: node dist/cli.js --help

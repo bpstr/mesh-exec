@@ -1,0 +1,14 @@
+✔ slugifies the documented examples (0.673084ms)
+✔ returns empty strings for empty and punctuation-only input (0.083917ms)
+✔ collapses repeated separators and trims their edges (0.058959ms)
+✔ rejects non-string input (0.19425ms)
+✔ CLI prints the slug for its arguments (30.442292ms)
+✔ CLI reports usage and fails without arguments (27.872958ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 105.597875

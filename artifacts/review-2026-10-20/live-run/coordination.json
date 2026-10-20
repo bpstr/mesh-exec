@@ -1,0 +1,298 @@
+{
+  "requirements": [
+    {
+      "mission_id": "57ac2a53-a8d0-42e0-b16a-24f2709f1112",
+      "id": "slugifier",
+      "revision": 3,
+      "anchor": "Build a tiny dependency-free Node.js slugifier with automated tests and usage documentation.",
+      "title": "Slugifier sample",
+      "criteria": [
+        "`slugify.mjs` exports `slugify(value)`, validates string input with TypeError, applies NFKD/decombining/lowercasing/non-ASCII-alphanumeric separator normalization and edge trimming, including empty/punctuation-only output.",
+        "`cli.mjs` imports the API without import side effects, joins arguments with spaces, prints one newline-terminated slug, and reports no-argument usage to stderr with exit code 1.",
+        "`slugify.test.mjs` uses Node built-in test/assert and covers roadmap examples, empty and repeated separators, type errors, plus spawned CLI success and no-argument failure.",
+        "`README.md` documents API, examples, CLI usage, and `npm test`; project remains dependency-free and changes only the four deliverable files.",
+        "`node --test slugify.test.mjs` succeeds, hashes and check evidence are recorded, and independent requirement and whole-roadmap coverage reviews pass against the final manifest."
+      ],
+      "state": "implemented",
+      "author_agent": "A5",
+      "evidence": [
+        {
+          "files": {
+            "slugify.mjs": "b8f9fc817af0468f842f884c617e720b3b3fa0614a5065e03f3658368d2be658"
+          },
+          "criterion": 0,
+          "description": "API source published and inspected.",
+          "operationId": "A5-publish-slugify-v1"
+        },
+        {
+          "files": {
+            "cli.mjs": "7bf7026687199e5f293ff3496fa58155c57cc0396ea0c36a5bfba612308d8587"
+          },
+          "criterion": 1,
+          "description": "CLI source published and inspected."
+        },
+        {
+          "files": {
+            "slugify.test.mjs": "1f78e3cb5cfc42cb65ecc80cf8e8424ff15ae3d1da2cd395247ea1c1f4df3b3d"
+          },
+          "criterion": 2,
+          "description": "Node built-in test suite covers required API and CLI cases."
+        },
+        {
+          "files": {
+            "README.md": "9b886b14cf6244c69faff70080fce9b9c16f0cf7512ed04e94f2e30798560831"
+          },
+          "criterion": 3,
+          "description": "README documents required API, examples, CLI, and test command."
+        },
+        {
+          "criterion": 4,
+          "description": "Final command passed 6/6 with zero failures at unchanged final manifest; independent reviews recorded.",
+          "operationId": "A5-final-test"
+        }
+      ],
+      "updated_at": "2026-10-20T16:39:58.086Z"
+    }
+  ],
+  "reviews": [
+    {
+      "id": "a3-whole-roadmap-coverage",
+      "mission_id": "57ac2a53-a8d0-42e0-b16a-24f2709f1112",
+      "agent_id": "A3",
+      "run_id": "5cf48fdd-6ffd-4826-a2b8-2d210a503fae",
+      "kind": "coverage",
+      "target_id": null,
+      "target_revision": null,
+      "roadmap_hash": "b4fadc305031156b61bab8a38897b98e91fd7013aa045a8a983c8de186052d21",
+      "manifest_hash": "9c47a2cb53e5292eea9b7d72dee13a2d6e63fca61d54d7729892e519c1672c68",
+      "coverage_hash": "c5dc6aa34f3d0e944c0bef86cea2889c38776de206efd096cdde01420100bd7f",
+      "verdict": "pass",
+      "reasoning": "Independent review of the exact manifest: it contains exactly the four requested new deliverables plus supplied package.json and ROADMAP.md. slugify.mjs fulfills string validation, NFKD decomposition, mark removal, lowercase ASCII-only separator collapse, trimming, and empty behavior. cli.mjs imports API and has specified success/no-arg paths. Tests cover all requested API and spawned CLI cases; README covers API, examples, CLI, and npm test. node --test slugify.test.mjs passed 6/6 in operation a3-final-node-test-b.",
+      "created_at": "2026-10-20T16:39:33.053Z"
+    },
+    {
+      "id": "a2-requirement-review-final",
+      "mission_id": "57ac2a53-a8d0-42e0-b16a-24f2709f1112",
+      "agent_id": "A2",
+      "run_id": "e3219131-047e-4b70-9def-a2caad6da580",
+      "kind": "requirement",
+      "target_id": "slugifier",
+      "target_revision": 2,
+      "roadmap_hash": "b4fadc305031156b61bab8a38897b98e91fd7013aa045a8a983c8de186052d21",
+      "manifest_hash": "9c47a2cb53e5292eea9b7d72dee13a2d6e63fca61d54d7729892e519c1672c68",
+      "coverage_hash": null,
+      "verdict": "pass",
+      "reasoning": "Inspected final source: slugify.mjs validates string input, uses NFKD plus mark removal, lowercases, collapses non-ASCII-alphanumeric runs and trims hyphens. cli.mjs joins argv, logs exactly one newline-terminated slug, and reports no-argument usage with exit 1. slugify.test.mjs uses node:test/assert and spawnSync for all requested categories. README covers API/examples/CLI/npm test. Controlled node --test slugify.test.mjs passed 6/6.",
+      "created_at": "2026-10-20T16:39:38.410Z"
+    }
+  ],
+  "claims": [
+    {
+      "mission_id": "57ac2a53-a8d0-42e0-b16a-24f2709f1112",
+      "id": "A4-readme",
+      "intention_id": null,
+      "agent_id": "A4",
+      "run_id": "92f5d744-e7c1-4148-855f-29fd4059221f",
+      "generation": 1,
+      "resources": [
+        "README.md"
+      ],
+      "state": "released",
+      "acquired_at": "2026-10-20T16:37:37.945Z",
+      "released_at": "2026-10-20T16:38:49.799Z"
+    },
+    {
+      "mission_id": "57ac2a53-a8d0-42e0-b16a-24f2709f1112",
+      "id": "A1-tests",
+      "intention_id": null,
+      "agent_id": "A1",
+      "run_id": "e4d222d9-1e88-4e4c-94af-b34fa4eec1cd",
+      "generation": 1,
+      "resources": [
+        "slugify.test.mjs"
+      ],
+      "state": "released",
+      "acquired_at": "2026-10-20T16:37:44.968Z",
+      "released_at": "2026-10-20T16:39:39.198Z"
+    },
+    {
+      "mission_id": "57ac2a53-a8d0-42e0-b16a-24f2709f1112",
+      "id": "a2-cli",
+      "intention_id": null,
+      "agent_id": "A2",
+      "run_id": "e3219131-047e-4b70-9def-a2caad6da580",
+      "generation": 1,
+      "resources": [
+        "cli.mjs"
+      ],
+      "state": "released",
+      "acquired_at": "2026-10-20T16:37:54.967Z",
+      "released_at": "2026-10-20T16:39:49.477Z"
+    },
+    {
+      "mission_id": "57ac2a53-a8d0-42e0-b16a-24f2709f1112",
+      "id": "A5-slugify-api",
+      "intention_id": null,
+      "agent_id": "A5",
+      "run_id": "87ed38dd-2095-4456-bc87-1039f47e66b3",
+      "generation": 1,
+      "resources": [
+        "slugify.mjs"
+      ],
+      "state": "released",
+      "acquired_at": "2026-10-20T16:38:34.091Z",
+      "released_at": "2026-10-20T16:40:38.863Z"
+    }
+  ],
+  "checkpoints": [
+    {
+      "id": "A4-docs-checkpoint",
+      "mission_id": "57ac2a53-a8d0-42e0-b16a-24f2709f1112",
+      "agent_id": "A4",
+      "run_id": "92f5d744-e7c1-4148-855f-29fd4059221f",
+      "body": {
+        "files": {
+          "README.md": "9b886b14cf6244c69faff70080fce9b9c16f0cf7512ed04e94f2e30798560831"
+        },
+        "tests": "Documentation-only; no test run needed.",
+        "decisions": [
+          "Docs cover required API, examples, CLI no-argument behavior, and npm test."
+        ],
+        "unfinished": [
+          "Await implementation/tests and independent review."
+        ],
+        "contribution": "Published README.md documentation.",
+        "pendingQuestions": [
+          "A3 needs avoid A2 CLI ownership; source remains unclaimed as of board revision 35."
+        ]
+      },
+      "created_at": "2026-10-20T16:38:26.641Z"
+    },
+    {
+      "id": "A4-docs-final",
+      "mission_id": "57ac2a53-a8d0-42e0-b16a-24f2709f1112",
+      "agent_id": "A4",
+      "run_id": "92f5d744-e7c1-4148-855f-29fd4059221f",
+      "body": {
+        "files": {
+          "README.md": "9b886b14cf6244c69faff70080fce9b9c16f0cf7512ed04e94f2e30798560831"
+        },
+        "tests": "Documentation-only contribution; no test run.",
+        "decisions": [
+          "README covers API contract, exact roadmap examples, CLI invocation/no-argument failure, and npm test."
+        ],
+        "unfinished": [
+          "A5 owns slugify.mjs; A1 owns tests; A2 published CLI; independent final review remains."
+        ],
+        "contribution": "Published required README.md.",
+        "pendingQuestions": []
+      },
+      "created_at": "2026-10-20T16:38:44.053Z"
+    },
+    {
+      "id": "A1-tests-verification",
+      "mission_id": "57ac2a53-a8d0-42e0-b16a-24f2709f1112",
+      "agent_id": "A1",
+      "run_id": "e4d222d9-1e88-4e4c-94af-b34fa4eec1cd",
+      "body": {
+        "files": {
+          "slugify.test.mjs": "1f78e3cb5cfc42cb65ecc80cf8e8424ff15ae3d1da2cd395247ea1c1f4df3b3d"
+        },
+        "tests": [
+          {
+            "result": "pass: 6 tests, 0 failures",
+            "command": "node --test slugify.test.mjs",
+            "operationId": "A1-final-test"
+          }
+        ],
+        "decisions": [
+          "Tests use Node built-in test/assert and spawned CLI checks.",
+          "Reviewed README as accurate on final manifest 9c47a2cb."
+        ],
+        "unfinished": [
+          "Independent source/whole-roadmap coverage review and completion acceptance remain with peers."
+        ],
+        "contribution": "Published slugify.test.mjs.",
+        "nextUsefulWork": "Do not edit final source; monitor and acknowledge review outcomes."
+      },
+      "created_at": "2026-10-20T16:39:35.314Z"
+    },
+    {
+      "id": "a3-final-review",
+      "mission_id": "57ac2a53-a8d0-42e0-b16a-24f2709f1112",
+      "agent_id": "A3",
+      "run_id": "5cf48fdd-6ffd-4826-a2b8-2d210a503fae",
+      "body": {
+        "files": {
+          "cli.mjs": "7bf7026687199e5f293ff3496fa58155c57cc0396ea0c36a5bfba612308d8587",
+          "README.md": "9b886b14cf6244c69faff70080fce9b9c16f0cf7512ed04e94f2e30798560831",
+          "slugify.mjs": "b8f9fc817af0468f842f884c617e720b3b3fa0614a5065e03f3658368d2be658",
+          "slugify.test.mjs": "1f78e3cb5cfc42cb65ecc80cf8e8424ff15ae3d1da2cd395247ea1c1f4df3b3d"
+        },
+        "tests": "node --test slugify.test.mjs passed 6/6 in mesh operation a3-final-node-test-b.",
+        "manifest": "9c47a2cb53e5292eea9b7d72dee13a2d6e63fca61d54d7729892e519c1672c68",
+        "decisions": [
+          "Coverage review pass recorded as a3-whole-roadmap-coverage.",
+          "A5 requested to complete complementary requirement review/evidence; no source changes should follow final reviews."
+        ],
+        "unfinished": [
+          "Await A5 complementary requirement review/evidence and mesh acceptance coordination."
+        ],
+        "contribution": "Independent whole-roadmap coverage review.",
+        "pendingQuestions": []
+      },
+      "created_at": "2026-10-20T16:39:41.667Z"
+    },
+    {
+      "id": "a2-cli-final",
+      "mission_id": "57ac2a53-a8d0-42e0-b16a-24f2709f1112",
+      "agent_id": "A2",
+      "run_id": "e3219131-047e-4b70-9def-a2caad6da580",
+      "body": {
+        "review": {
+          "id": "a2-requirement-review-final",
+          "verdict": "pass",
+          "manifest": "9c47a2cb53e5292eea9b7d72dee13a2d6e63fca61d54d7729892e519c1672c68"
+        },
+        "pending": "A3 whole-roadmap coverage review and peers' claim release/acceptance.",
+        "contribution": "Implemented cli.mjs (hash 7bf7026687199e5f293ff3496fa58155c57cc0396ea0c36a5bfba612308d8587): imports slugify, joins argv, stderr usage plus exit 1 with no args, console.log slug otherwise.",
+        "verification": {
+          "result": "6 passed, 0 failed",
+          "command": "node --test slugify.test.mjs",
+          "manifest": "9c47a2cb53e5292eea9b7d72dee13a2d6e63fca61d54d7729892e519c1672c68",
+          "operationId": "a2-final-test-1"
+        }
+      },
+      "created_at": "2026-10-20T16:39:45.619Z"
+    },
+    {
+      "id": "A5-api-and-evidence",
+      "mission_id": "57ac2a53-a8d0-42e0-b16a-24f2709f1112",
+      "agent_id": "A5",
+      "run_id": "87ed38dd-2095-4456-bc87-1039f47e66b3",
+      "body": {
+        "files": {
+          "slugify.mjs": "b8f9fc817af0468f842f884c617e720b3b3fa0614a5065e03f3658368d2be658"
+        },
+        "tests": [
+          {
+            "result": "pass: 6 tests, 0 failures",
+            "command": "node --test slugify.test.mjs",
+            "operationId": "A5-final-test"
+          }
+        ],
+        "decisions": [
+          "Implemented NFKD plus Unicode combining-mark removal, then ASCII normalization.",
+          "Created shared requirement slugifier and merged evidence at revision 3.",
+          "A5 cannot review its own authored requirement; asked A2 for independent requirement review."
+        ],
+        "unfinished": [
+          "Await A2 independent requirement review and normal acceptance process."
+        ],
+        "contribution": "Published slugify.mjs.",
+        "nextUsefulWork": "No source changes; release API claim and wait for A2 review."
+      },
+      "created_at": "2026-10-20T16:40:25.136Z"
+    }
+  ]
+}

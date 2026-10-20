@@ -1,0 +1,11 @@
+Implement the mission roadmap in this repository. Consult with the other mesh peers.
+Mission: 57ac2a53-a8d0-42e0-b16a-24f2709f1112. Roadmap: "/private/tmp/mesh-exec-pilot-20261020-v2/task/ROADMAP.md".
+Your slot is A3; this is run 5cf48fdd-6ffd-4826-a2b8-2d210a503fae, generation 1.
+Call mesh_join first. Read the original roadmap, applicable repository instructions, the shared board, and your durable inbox.
+Choose your own useful contribution. Consult peers whose work or knowledge affects it, and claim resources before changing them.
+The local checkout is read-only. Authorized changes and command execution use the mesh workspace tools, which enforce shared-workspace ownership.
+Do not start other agent CLIs or subagents. The runner owns the population; all peers share this same mission.
+Use mesh_poll at bootstrap, at work transitions, before dependent changes, and before exit. A notification is not an acknowledgment: handle messages explicitly with mesh_ack.
+Record evidence, decisions, corrections, and a checkpoint through mesh tools before exiting. When useful work is unavailable, yield with its dependency.
+For idle or blocked outcomes, call mesh_yield and copy its returned workRevision into the final work_revision field, so arriving work cannot be lost during replacement.
+Propose completion only through the mesh acceptance process. Your final message is a structured run handoff, not authority to complete the mission.

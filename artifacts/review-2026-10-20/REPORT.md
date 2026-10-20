@@ -5,10 +5,12 @@ and merged as `d152d12c79321e97607913acbd0b9c7d44e96e5b`.
 The original reviewed head was `c607ba1a63c3152f69319fb38126b5a716c2ca0e`.
 
 The application passes deterministic protocol, persistence, process supervision,
-workspace, and completion checks. **Live Terra collaboration is not yet
-qualified.** The authorized five processes all failed at CLI configuration
-loading, before reaching model execution. No successful agent collaboration,
-model usage, or completed sample implementation is claimed.
+workspace, and completion checks. After a separately authorized retry, **five live
+Terra agents produced a working sample with six passing tests, but did not reach
+formal mission acceptance**. Read the [live-run analysis](live-run/REPORT.md) for
+contributions, unresolved handoffs, timing, and token receipts. The first startup
+failure remains preserved below. Follow-up export fixes and the first evidence
+record were merged in [PR #2](https://github.com/bpstr/mesh-exec/pull/2).
 
 ## Review findings and changes
 
@@ -51,13 +53,14 @@ not a hostile-client security certification or a 50/100-agent capacity benchmark
 | `validation/tests-export-fix.txt` | 13 affected runner/daemon checks passed after schema retention changes |
 | `validation/tests-timestamps.txt` | Timestamp redaction and daemon export regressions |
 | `validation/tests-postgres-export.txt` | Affected export integration against local PostgreSQL 18.6 |
+| `validation/final-ci-summary.json` | Follow-up PR #2: 40 passes, zero failures/skips in each Linux and macOS job |
 
 Build results and failed intermediate checks are retained in `validation/`.
 Passing evidence was carried forward; local full suites were not repeatedly
 rerun after unrelated changes. Automated checks used deterministic subprocess
 fixtures and local databases, without model inference.
 
-## Authorized pilot and outcome
+## First authorized attempt: startup failure
 
 The user explicitly approved live Terra through the Codex launcher, with five
 launches, a five-minute cutoff, no replacements or retries, and a stop on
@@ -95,10 +98,10 @@ prompt context without running inference. That does **not** qualify its live
 endpoint, model calls, or tools. The configuration fields are documented in the
 [official Codex configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference).
 
-The original launch allowance is exhausted. A fresh five-launch/five-minute
-allowance was requested; the prepared `pilot-retry.mjs` must not be executed
-without that explicit authorization. Its exclusive grant file prevents reuse
-once launched. No authorization is inferred from this report or from the
+The user explicitly approved a fresh five-launch/five-minute allowance.
+`pilot-retry.mjs` executed it once; results are in `live-run/`. Both allowances
+are now exhausted. The exclusive grant files prevent rerunning either script.
+No further launch authorization is inferred from this report or from the
 presence of a script.
 
 ## Evidence guide
@@ -112,8 +115,8 @@ presence of a script.
 - `authorization-consumed.json`: scope, budget, starting revision, and CLI version.
 - `runner-summary.json`, `status.json`, `metrics.txt`: original supervisor results.
 - `pilot.mjs`, `terra-launcher.sh`: exact first-attempt harness and launcher.
-- `pilot-retry.mjs`, `terra-launcher-v2.sh`: prepared corrected workflow; see the
-  authorization restriction above.
+- `pilot-retry.mjs`, `terra-launcher-v2.sh`: exact second-attempt workflow.
+- `live-run/`: complete live collaboration results and analysis.
 - `validation/provider-config-check.json`: metadata and digest of the no-inference
   configuration check. The full rendered prompt is intentionally kept out of Git.
 
@@ -122,7 +125,7 @@ state. It does not expose hidden model reasoning.
 
 ## Cleanup and remaining limits
 
-The first pilot's listener on port 65151 is gone and its workers were reaped.
+The pilot listeners on ports 65151 and 49452 are gone and all workers were reaped.
 The briefly started Colima VM was stopped after native macOS support became
 available. Existing Assign services and unrelated previews were preserved.
 The pilot database remains available for inspection; no shared database was
@@ -132,3 +135,11 @@ The data volume had about 15 GiB free at the last check, below the user's 50 GiB
 cleanup threshold. This session's dependencies occupy about 96 MiB and its build
 less than 1 MiB; they are retained so the application remains runnable. No
 unrelated cache, project, VM disk, or database was pruned.
+
+Post-session cleanup removed only the inactive review-generated
+`/Users/bpstr/Github/mesh-exec/.codanna` and
+`/Users/bpstr/Github/mesh-exec/.codannaignore`, reclaiming 636 KiB.
+The data volume still has about 15 GiB free. The largest inspected candidates
+outside this session are `/Users/bpstr/.colima` (1.2 GiB) and
+`/Users/bpstr/.npm` (932 MiB); both were preserved. Broader cleanup would need
+explicit user authorization. Docker's original `default` context was restored.

@@ -1,0 +1,74 @@
+{
+  "mission": {
+    "id": "04cb49b8-98bd-4f47-b7e7-48b548108472",
+    "repo": "/private/tmp/mesh-exec-pilot-20261020/task",
+    "roadmap_path": "/private/tmp/mesh-exec-pilot-20261020/task/ROADMAP.md",
+    "roadmap_hash": "b4fadc305031156b61bab8a38897b98e91fd7013aa045a8a983c8de186052d21",
+    "state": "stopped",
+    "revision": "1",
+    "config": {
+      "agents": 5,
+      "verification": [
+        [
+          "/Users/bpstr/.nvm/versions/node/v24.19.0/bin/node",
+          "--test",
+          "slugify.test.mjs"
+        ]
+      ]
+    },
+    "created_at": "2026-10-20T16:25:28.515Z",
+    "updated_at": "2026-10-20T16:25:28.515Z",
+    "acceptance": null
+  },
+  "runs": [
+    {
+      "state": "failed",
+      "count": 5
+    }
+  ],
+  "slots": [
+    {
+      "id": "A1",
+      "generation": 1,
+      "state": "parked",
+      "active_run_id": null,
+      "handoff": null
+    },
+    {
+      "id": "A2",
+      "generation": 1,
+      "state": "parked",
+      "active_run_id": null,
+      "handoff": null
+    },
+    {
+      "id": "A3",
+      "generation": 1,
+      "state": "parked",
+      "active_run_id": null,
+      "handoff": null
+    },
+    {
+      "id": "A4",
+      "generation": 1,
+      "state": "parked",
+      "active_run_id": null,
+      "handoff": null
+    },
+    {
+      "id": "A5",
+      "generation": 1,
+      "state": "parked",
+      "active_run_id": null,
+      "handoff": null
+    }
+  ],
+  "requirements": [],
+  "messages": {
+    "total": 0,
+    "pending": 0,
+    "oldest_pending_seconds": null
+  },
+  "outbox": [],
+  "operations": []
+}

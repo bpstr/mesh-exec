@@ -1,0 +1,20 @@
+✔ independent MCP peers consult over A2A, publish in one checkout, and complete with a traced final barrier (1367.908875ms)
+✔ completion refuses stale coverage, unhandled replies, and a changing validation source (689.313333ms)
+✔ competing writes, stale dependencies, idempotency, and symlink escapes are rejected without losing content (864.353042ms)
+✔ the operating-system flock excludes another daemon, and releasing it permits restart (491.85425ms)
+✔ a failed prepared-record transaction never publishes a file (427.193375ms)
+✔ restart reconciles a partial journal and refuses an unexpected external edit (433.673833ms)
+✔ command retries run once and full output survives bounded, redacted previews (527.933834ms)
+✔ source mutators block coherent reads and final verification retains the gate through acceptance (684.767125ms)
+✔ cancellation terminates the managed process group and revoked runs cannot publish (419.343083ms)
+✔ a final barrier drains full command capacity without deadlocking queued source mutations (659.686959ms)
+✔ an admission delayed by sandbox qualification cannot cross a final barrier (403.525375ms)
+✔ real OS sandbox forbids source writes and does not silently fall back (481.57225ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8166.074959

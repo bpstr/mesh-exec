@@ -216,6 +216,8 @@ test('independent MCP peers consult over A2A, publish in one checkout, and compl
   const exportDir = join(f.directory, 'export');
   const exported = (await exportMission(f.db, mission.id, exportDir)) as { events: number };
   assert.ok(exported.events > 20);
+  const snapshot = JSON.parse(await readFile(join(exportDir, 'mission.json'), 'utf8'));
+  assert.match(snapshot.mission.created_at, /^\d{4}-\d{2}-\d{2}T/);
   assert.match(
     await readFile(join(exportDir, 'events.jsonl'), 'utf8'),
     /Should zero be represented/,

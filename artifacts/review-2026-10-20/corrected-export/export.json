@@ -1,0 +1,65 @@
+{
+  "missionId": "04cb49b8-98bd-4f47-b7e7-48b548108472",
+  "exportedAt": "2026-10-20T16:34:08.793Z",
+  "events": 47,
+  "artifacts": [
+    "runs/2649593e-2f65-4d56-9884-7c7687d3907a/stdout.jsonl",
+    "runs/2649593e-2f65-4d56-9884-7c7687d3907a/stderr.log",
+    "runs/2649593e-2f65-4d56-9884-7c7687d3907a/prompt.txt",
+    "runs/fd515ee7-19ea-4b0a-8b33-02a67adf4eb2/stdout.jsonl",
+    "runs/fd515ee7-19ea-4b0a-8b33-02a67adf4eb2/stderr.log",
+    "runs/fd515ee7-19ea-4b0a-8b33-02a67adf4eb2/prompt.txt",
+    "runs/be6a9936-a42a-4fc3-9257-52451f4c6c14/stdout.jsonl",
+    "runs/be6a9936-a42a-4fc3-9257-52451f4c6c14/stderr.log",
+    "runs/be6a9936-a42a-4fc3-9257-52451f4c6c14/prompt.txt",
+    "runs/9ed690d4-0dc5-471d-890b-ad303133d59c/stdout.jsonl",
+    "runs/9ed690d4-0dc5-471d-890b-ad303133d59c/stderr.log",
+    "runs/9ed690d4-0dc5-471d-890b-ad303133d59c/prompt.txt",
+    "runs/12cd57ec-4db7-40e1-a08f-3a7e0e36a347/stdout.jsonl",
+    "runs/12cd57ec-4db7-40e1-a08f-3a7e0e36a347/stderr.log",
+    "runs/12cd57ec-4db7-40e1-a08f-3a7e0e36a347/prompt.txt"
+  ],
+  "missing": [
+    {
+      "source": "/private/tmp/mesh-exec-pilot-20261020/runtime/runs/04cb49b8-98bd-4f47-b7e7-48b548108472/A1/2649593e-2f65-4d56-9884-7c7687d3907a/result.json",
+      "reason": "not present"
+    },
+    {
+      "source": "/private/tmp/mesh-exec-pilot-20261020/runtime/runs/04cb49b8-98bd-4f47-b7e7-48b548108472/A1/2649593e-2f65-4d56-9884-7c7687d3907a/result.schema.json",
+      "reason": "not present"
+    },
+    {
+      "source": "/private/tmp/mesh-exec-pilot-20261020/runtime/runs/04cb49b8-98bd-4f47-b7e7-48b548108472/A2/fd515ee7-19ea-4b0a-8b33-02a67adf4eb2/result.json",
+      "reason": "not present"
+    },
+    {
+      "source": "/private/tmp/mesh-exec-pilot-20261020/runtime/runs/04cb49b8-98bd-4f47-b7e7-48b548108472/A2/fd515ee7-19ea-4b0a-8b33-02a67adf4eb2/result.schema.json",
+      "reason": "not present"
+    },
+    {
+      "source": "/private/tmp/mesh-exec-pilot-20261020/runtime/runs/04cb49b8-98bd-4f47-b7e7-48b548108472/A3/be6a9936-a42a-4fc3-9257-52451f4c6c14/result.json",
+      "reason": "not present"
+    },
+    {
+      "source": "/private/tmp/mesh-exec-pilot-20261020/runtime/runs/04cb49b8-98bd-4f47-b7e7-48b548108472/A3/be6a9936-a42a-4fc3-9257-52451f4c6c14/result.schema.json",
+      "reason": "not present"
+    },
+    {
+      "source": "/private/tmp/mesh-exec-pilot-20261020/runtime/runs/04cb49b8-98bd-4f47-b7e7-48b548108472/A4/9ed690d4-0dc5-471d-890b-ad303133d59c/result.json",
+      "reason": "not present"
+    },
+    {
+      "source": "/private/tmp/mesh-exec-pilot-20261020/runtime/runs/04cb49b8-98bd-4f47-b7e7-48b548108472/A4/9ed690d4-0dc5-471d-890b-ad303133d59c/result.schema.json",
+      "reason": "not present"
+    },
+    {
+      "source": "/private/tmp/mesh-exec-pilot-20261020/runtime/runs/04cb49b8-98bd-4f47-b7e7-48b548108472/A5/12cd57ec-4db7-40e1-a08f-3a7e0e36a347/result.json",
+      "reason": "not present"
+    },
+    {
+      "source": "/private/tmp/mesh-exec-pilot-20261020/runtime/runs/04cb49b8-98bd-4f47-b7e7-48b548108472/A5/12cd57ec-4db7-40e1-a08f-3a7e0e36a347/result.schema.json",
+      "reason": "not present"
+    }
+  ],
+  "redaction": "Bearer tokens, known run credentials, API-key patterns, and credential fields redacted; application text is retained."
+}

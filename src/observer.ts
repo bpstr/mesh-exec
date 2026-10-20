@@ -263,7 +263,6 @@ export async function exportMission(
       for (const name of [
         'stdout.jsonl',
         'stderr.log',
-        'events.jsonl',
         'result.json',
         'prompt.txt',
         'result.schema.json',

@@ -26,6 +26,48 @@ export interface CodexRunResult {
   work_revision: string | null;
 }
 
+/** These are observed Codex identifiers, never mesh/A2A conversation IDs. */
+export interface CodexEventCorrelation {
+  threadId?: string;
+  turnId?: string;
+  itemId?: string;
+}
+
+export class CodexEventTracker {
+  private threadId?: string;
+  private turnId?: string;
+
+  current(): CodexEventCorrelation {
+    return {
+      ...(this.threadId ? { threadId: this.threadId } : {}),
+      ...(this.turnId ? { turnId: this.turnId } : {}),
+    };
+  }
+
+  observe(event: Record<string, unknown>): CodexEventCorrelation {
+    const id = (value: unknown): string | undefined =>
+      typeof value === 'string' && value.length > 0 ? value : undefined;
+    const object = (value: unknown): Record<string, unknown> | undefined =>
+      value && typeof value === 'object' && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : undefined;
+    const thread = id(event.thread_id) ?? id(object(event.thread)?.id);
+    if (thread && thread !== this.threadId) {
+      this.threadId = thread;
+      this.turnId = undefined;
+    }
+    if (event.type === 'turn.started') this.turnId = undefined;
+    const turn = id(event.turn_id) ?? id(object(event.turn)?.id);
+    if (turn) this.turnId = turn;
+    const itemId = id(object(event.item)?.id) ?? id(event.item_id);
+    const correlation = { ...this.current(), ...(itemId ? { itemId } : {}) };
+    if (['turn.completed', 'turn.failed', 'thread.completed'].includes(String(event.type))) {
+      this.turnId = undefined;
+    }
+    return correlation;
+  }
+}
+
 export interface CodexInvocationOptions {
   repository: string;
   roadmapPath: string;

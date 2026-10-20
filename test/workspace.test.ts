@@ -402,6 +402,386 @@ test('cancellation terminates the managed process group and revoked runs cannot 
   }
 });
 
+test('command admission bounds accepted work, preserves replays, and reuses cancelled queue capacity', async () => {
+  const f = await fixture({ maxCommands: 1, maxQueuedCommands: 1 });
+  try {
+    const active = {
+      operationId: 'capacity-active',
+      mode: 'read' as const,
+      argv: [process.execPath, '-e', 'setInterval(()=>{},1024)'],
+    };
+    await f.workspace.exec(principal, active);
+    const queued = {
+      operationId: 'capacity-queued',
+      mode: 'read' as const,
+      argv: [process.execPath, '-e', 'process.exit(0)'],
+    };
+    const duplicates = await Promise.all([
+      f.workspace.exec(principal, queued),
+      f.workspace.exec(principal, queued),
+    ]);
+    assert.ok(duplicates.every((operation) => operation.operation_id === queued.operationId));
+    const rejected = { ...queued, operationId: 'capacity-overload' };
+    await assert.rejects(
+      f.workspace.exec(principal, rejected),
+      (error: any) =>
+        error.code === 'command_queue_full' &&
+        error.details.acceptedCommands === 2 &&
+        error.details.admissionLimit === 2 &&
+        error.details.retryable === true,
+    );
+    assert.equal(
+      (
+        await f.db.query('SELECT operation_id FROM workspace_operations WHERE operation_id=$1', [
+          rejected.operationId,
+        ])
+      ).rows.length,
+      0,
+    );
+    assert.equal((await f.workspace.exec(principal, active)).operation_id, active.operationId);
+    await assert.rejects(
+      f.workspace.exec(principal, { ...queued, argv: [process.execPath, '-e', 'process.exit(1)'] }),
+      (error: any) => error.code === 'operation_id_conflict',
+    );
+    assert.equal((await f.workspace.cancel(principal, queued.operationId)).state, 'cancelled');
+    assert.equal((await f.workspace.exec(principal, queued)).state, 'cancelled');
+    assert.equal((await f.workspace.exec(principal, rejected)).state, 'prepared');
+    assert.equal(
+      f.events.filter(
+        (event) =>
+          event.kind === 'workspace.command.admitted' && event.operationId === queued.operationId,
+      ).length,
+      1,
+    );
+    assert.ok(
+      f.events.some(
+        (event) =>
+          event.kind === 'workspace.command.rejected' && event.operationId === rejected.operationId,
+      ),
+    );
+    assert.ok(
+      f.events.some(
+        (event) =>
+          event.kind === 'workspace.command.queued' && event.operationId === queued.operationId,
+      ),
+    );
+    assert.ok(
+      !f.events.some(
+        (event) =>
+          event.kind === 'workspace.command.running' && event.operationId === queued.operationId,
+      ),
+    );
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('yield and run cancellation remove capacity waiters without waiting for another peer', async () => {
+  const f = await fixture({ maxCommands: 1, maxQueuedCommands: 1 });
+  const peer = { ...principal, agentId: 'A2', runId: 'run-2' };
+  try {
+    await f.workspace.exec(peer, {
+      operationId: 'other-peer-active',
+      mode: 'read',
+      argv: [process.execPath, '-e', 'setInterval(()=>{},1024)'],
+    });
+    const queued = {
+      operationId: 'queued-yield',
+      mode: 'read' as const,
+      argv: [process.execPath, '-e', 'process.exit(0)'],
+    };
+    await f.workspace.exec(principal, queued);
+    await f.workspace.yieldRun(principal.runId, async () => {
+      assert.equal((await f.workspace.operation(principal, queued.operationId)).state, 'cancelled');
+    });
+    assert.ok(
+      ['prepared', 'running'].includes(
+        (await f.workspace.operation(peer, 'other-peer-active')).state,
+      ),
+    );
+    await f.workspace.exec(principal, { ...queued, operationId: 'queued-revoke' });
+    await f.workspace.cancelRun(principal.runId);
+    assert.equal((await f.workspace.operation(principal, 'queued-revoke')).state, 'cancelled');
+    assert.ok(
+      !f.events.some(
+        (event) =>
+          event.kind === 'workspace.command.running' && event.agentId === principal.agentId,
+      ),
+    );
+    await f.workspace.cancel(peer, 'other-peer-active');
+    const next = { ...queued, operationId: 'capacity-after-cancel' };
+    await f.workspace.exec(peer, next);
+    assert.equal((await terminal(f.workspace, next.operationId)).state, 'succeeded');
+    const acquired = f.events.find(
+      (event) =>
+        event.kind === 'workspace.command.capacity_acquired' &&
+        event.operationId === next.operationId,
+    );
+    assert.ok(acquired);
+    assert.ok((acquired.data as { waitMs: number }).waitMs >= 0);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('zero queued capacity rejects additional work and permits final verification after drain', async () => {
+  const f = await fixture({ maxCommands: 1, maxQueuedCommands: 0 });
+  try {
+    await f.workspace.exec(principal, {
+      operationId: 'no-backlog-active',
+      mode: 'read',
+      argv: [process.execPath, '-e', 'setInterval(()=>{},1024)'],
+    });
+    await assert.rejects(
+      f.workspace.exec(principal, {
+        operationId: 'no-backlog-extra',
+        mode: 'read',
+        argv: [process.execPath, '-e', 'process.exit(0)'],
+      }),
+      (error: any) => error.code === 'command_queue_full',
+    );
+    await f.workspace.cancel(principal, 'no-backlog-active');
+    await f.workspace.withBarrier(async (barrier) => {
+      assert.equal(
+        (await barrier.verify([process.execPath, '-e', 'process.exit(0)'], { principal })).exitCode,
+        0,
+      );
+    });
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('closing cancels every owner before draining commands waiting on another owners source gate', async () => {
+  let releaseFirst!: () => void;
+  const firstPaused = new Promise<void>((accept) => {
+    releaseFirst = accept;
+  });
+  let firstAcquired!: () => void;
+  const acquired = new Promise<void>((accept) => {
+    firstAcquired = accept;
+  });
+  const peer = { ...principal, agentId: 'A2', runId: 'run-2' };
+  const f = await fixture({
+    maxCommands: 2,
+    maxQueuedCommands: 0,
+    events: async (event) => {
+      if (
+        event.kind === 'workspace.command.capacity_acquired' &&
+        event.operationId === 'waiting-owner'
+      ) {
+        firstAcquired();
+        await firstPaused;
+      }
+      return { ...event, id: '1', seq: '1', at: new Date().toISOString() };
+    },
+  });
+  try {
+    await f.workspace.exec(principal, {
+      operationId: 'waiting-owner',
+      mode: 'mutate',
+      argv: [process.execPath, '-e', 'process.exit(0)'],
+    });
+    await acquired;
+    await f.workspace.exec(peer, {
+      operationId: 'gate-owner',
+      mode: 'mutate',
+      argv: [process.execPath, '-e', 'setInterval(()=>{},1024)'],
+    });
+    for (
+      let index = 0;
+      index < 128 && (await f.workspace.operation(peer, 'gate-owner')).state !== 'running';
+      index++
+    )
+      await pause(8);
+    assert.equal((await f.workspace.operation(peer, 'gate-owner')).state, 'running');
+    releaseFirst();
+    await pause(8);
+    const outcome = await Promise.race([
+      f.workspace.close().then(() => 'closed'),
+      pause(2048).then(() => 'blocked'),
+    ]);
+    assert.equal(outcome, 'closed');
+    const operations = await f.db.query<{ state: string }>(
+      'SELECT state FROM workspace_operations',
+    );
+    assert.deepEqual(
+      operations.rows.map((operation) => operation.state),
+      ['cancelled', 'cancelled'],
+    );
+  } finally {
+    releaseFirst();
+    await f.workspace.cancelRun(peer.runId);
+    await f.cleanup();
+  }
+});
+
+test('cancelling a command waiting for the source gate preserves its predecessors gate', async () => {
+  let releaseFirst!: () => void;
+  const firstPaused = new Promise<void>((accept) => {
+    releaseFirst = accept;
+  });
+  let firstAcquired!: () => void;
+  const acquired = new Promise<void>((accept) => {
+    firstAcquired = accept;
+  });
+  const peer = { ...principal, agentId: 'A2', runId: 'run-2' };
+  const f = await fixture({
+    maxCommands: 2,
+    maxQueuedCommands: 0,
+    events: async (event) => {
+      if (
+        event.kind === 'workspace.command.capacity_acquired' &&
+        event.operationId === 'cancel-gate-wait'
+      ) {
+        firstAcquired();
+        await firstPaused;
+      }
+      return { ...event, id: '1', seq: '1', at: new Date().toISOString() };
+    },
+  });
+  try {
+    await f.workspace.exec(principal, {
+      operationId: 'cancel-gate-wait',
+      mode: 'mutate',
+      argv: [process.execPath, '-e', "require('node:fs').writeFileSync('should-not-exist','bad')"],
+    });
+    await acquired;
+    await f.workspace.exec(peer, {
+      operationId: 'keep-gate-owner',
+      mode: 'mutate',
+      argv: [process.execPath, '-e', 'setInterval(()=>{},1024)'],
+    });
+    for (
+      let index = 0;
+      index < 128 && (await f.workspace.operation(peer, 'keep-gate-owner')).state !== 'running';
+      index++
+    )
+      await pause(8);
+    assert.equal((await f.workspace.operation(peer, 'keep-gate-owner')).state, 'running');
+    releaseFirst();
+    await pause(8);
+    const outcome = await Promise.race([
+      f.workspace.cancel(principal, 'cancel-gate-wait').then((operation) => operation.state),
+      pause(2048).then(() => 'blocked'),
+    ]);
+    assert.equal(outcome, 'cancelled');
+    assert.equal((await f.workspace.operation(peer, 'keep-gate-owner')).state, 'running');
+    let readFinished = false;
+    const read = f.workspace.read(principal, ['should-not-exist']).then((result) => {
+      readFinished = true;
+      return result;
+    });
+    await pause(16);
+    assert.equal(readFinished, false);
+    await f.workspace.cancel(peer, 'keep-gate-owner');
+    assert.equal((await read).files[0].content, null);
+  } finally {
+    releaseFirst();
+    await f.workspace.cancelRun(peer.runId);
+    await f.cleanup();
+  }
+});
+
+test('an admission event failure rolls back the operation and retains capacity', async () => {
+  let failAdmission = true;
+  const f = await fixture({
+    maxCommands: 1,
+    maxQueuedCommands: 0,
+    events: async (event) => {
+      if (event.kind === 'workspace.command.admitted' && failAdmission) {
+        failAdmission = false;
+        throw new Error('Intentional admission event failure');
+      }
+      return { ...event, id: '1', seq: '1', at: new Date().toISOString() };
+    },
+  });
+  try {
+    const input = {
+      operationId: 'retry-admission',
+      mode: 'read' as const,
+      argv: [process.execPath, '-e', 'process.exit(0)'],
+    };
+    await assert.rejects(
+      f.workspace.exec(principal, input),
+      /Intentional admission event failure/u,
+    );
+    assert.equal(
+      (await f.db.query('SELECT operation_id FROM workspace_operations')).rows.length,
+      0,
+    );
+    await f.workspace.exec(principal, input);
+    assert.equal((await terminal(f.workspace, input.operationId)).state, 'succeeded');
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('yield and revocation fence command admission already committing before registration', async () => {
+  const pauses = new Map<string, { entered: () => void; resume: Promise<void> }>();
+  const emitted: TraceInput[] = [];
+  const f = await fixture({
+    maxCommands: 1,
+    maxQueuedCommands: 0,
+    events: async (event) => {
+      emitted.push(event);
+      const paused = pauses.get(event.operationId ?? '');
+      if (event.kind === 'workspace.command.admitted' && paused) {
+        paused.entered();
+        await paused.resume;
+      }
+      return { ...event, id: '1', seq: '1', at: new Date().toISOString() };
+    },
+  });
+  try {
+    for (const action of ['yield', 'revoke'] as const) {
+      const owner = { ...principal, runId: `admission-${action}` };
+      const operationId = `committing-${action}`;
+      let unblock!: () => void;
+      let entered!: () => void;
+      const entering = new Promise<void>((accept) => {
+        entered = accept;
+      });
+      const resume = new Promise<void>((accept) => {
+        unblock = accept;
+      });
+      pauses.set(operationId, { entered, resume });
+      const input = {
+        operationId,
+        mode: 'read' as const,
+        argv: [process.execPath, '-e', 'process.exit(0)'],
+      };
+      const admission = f.workspace.exec(owner, input);
+      try {
+        await entering;
+        if (action === 'yield') await f.workspace.yieldRun(owner.runId, async () => undefined);
+        else await f.workspace.cancelRun(owner.runId);
+      } finally {
+        unblock();
+      }
+      assert.equal((await admission).state, 'cancelled');
+      assert.ok(
+        !emitted.some(
+          (event) =>
+            event.kind === 'workspace.command.running' && event.operationId === operationId,
+        ),
+      );
+      const later = { ...input, operationId: `after-${action}` };
+      if (action === 'yield') {
+        await f.workspace.exec(owner, later);
+        assert.equal((await terminal(f.workspace, later.operationId)).state, 'succeeded');
+      } else {
+        await assert.rejects(
+          f.workspace.exec(owner, later),
+          (error: any) => error.code === 'run_revoked',
+        );
+      }
+    }
+  } finally {
+    await f.cleanup();
+  }
+});
+
 test('yield drains commands, resumes admission, and cannot undo concurrent supervisor revocation', async () => {
   const f = await fixture();
   try {

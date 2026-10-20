@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS a2a_messages (
   kind text NOT NULL, trace_id text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY(mission_id,sender_id,recipient_id,message_id)
 );
+CREATE INDEX IF NOT EXISTS a2a_messages_task_history ON a2a_messages(mission_id,task_id,sender_id,recipient_id,kind,created_at);
 CREATE TABLE IF NOT EXISTS mailbox_deliveries (
   delivery_id text PRIMARY KEY, mission_id text NOT NULL, sender_id text NOT NULL,
   recipient_id text NOT NULL, message_id text NOT NULL, task_id text NOT NULL REFERENCES a2a_tasks(task_id),
@@ -82,6 +83,7 @@ CREATE TABLE IF NOT EXISTS a2a_outbox_attempts (
   attempt_id text PRIMARY KEY, outbox_id text NOT NULL REFERENCES a2a_outbox(outbox_id),
   started_at timestamptz NOT NULL DEFAULT now(), ended_at timestamptz, result jsonb, error jsonb
 );
+CREATE INDEX IF NOT EXISTS a2a_attempts_outbox_history ON a2a_outbox_attempts(outbox_id,started_at,attempt_id);
 `;
 
 export interface A2aOptions {

@@ -288,7 +288,10 @@ test('board knowledge pagination bypasses unchanged snapshots and retains search
   assert.equal(remaining.knowledge.length, 2);
 });
 
-async function fixture(workflow: 'implementation' | 'discussion' = 'implementation') {
+async function fixture(
+  workflow: 'implementation' | 'discussion' = 'implementation',
+  limits: { maxCommands?: number; maxQueuedCommands?: number } = {},
+) {
   const directory = await mkdtemp(join(tmpdir(), 'mesh-integration-'));
   const repo = join(directory, 'repo');
   await mkdir(repo);
@@ -308,6 +311,7 @@ async function fixture(workflow: 'implementation' | 'discussion' = 'implementati
     agents: workflow === 'discussion' ? 3 : 2,
     config: { workflow },
     port: 0,
+    ...limits,
     workspace: {
       commandBuilder: async (o) => ({
         command: o.argv[0],
@@ -373,6 +377,62 @@ async function fixture(workflow: 'implementation' | 'discussion' = 'implementati
     },
   };
 }
+
+test(
+  'command overload is explicit over MCP and effective limits remain in the trace',
+  { timeout: 16_384 },
+  async (t) => {
+    const f = await fixture('implementation', { maxCommands: 1, maxQueuedCommands: 0 });
+    t.after(f.close);
+    const ready = await readEvents(f.db, f.daemon.missionId, { kind: 'daemon.ready' });
+    assert.deepEqual((ready[0].data as any).commandCapacity, {
+      maxCommands: 1,
+      maxQueuedCommands: 0,
+    });
+    const active = {
+      operationId: 'mcp-active',
+      mode: 'read',
+      argv: [process.execPath, '-e', 'setInterval(() => {}, 1024)'],
+    };
+    await f.call(f.ca, 'mesh_exec', active);
+    const rejected = await f.cb.callTool({
+      name: 'mesh_exec',
+      arguments: {
+        operationId: 'mcp-overload',
+        mode: 'read',
+        argv: [process.execPath, '-e', 'process.exit(0)'],
+      },
+    });
+    assert.equal(rejected.isError, true);
+    const payload = JSON.parse((rejected.content as { text: string }[])[0].text);
+    assert.equal(payload.code, 'command_queue_full');
+    assert.equal(payload.details.retryable, true);
+    assert.equal(payload.details.admissionLimit, 1);
+    assert.equal(payload.details.acceptedCommands, 1);
+    const replay = await f.call(f.ca, 'mesh_exec', active);
+    assert.equal(replay.operation_id, active.operationId);
+    const failures = await readEvents(f.db, f.daemon.missionId, { kind: 'tool.mesh_exec.failed' });
+    assert.equal(failures.length, 1);
+    const pressure = await readEvents(f.db, f.daemon.missionId, {
+      kind: 'workspace.command.rejected',
+    });
+    assert.equal(pressure.length, 1);
+    assert.equal(pressure[0].operationId, 'mcp-overload');
+    assert.equal(
+      (
+        await f.db.query('SELECT operation_id FROM workspace_operations WHERE operation_id=$1', [
+          'mcp-overload',
+        ])
+      ).rows.length,
+      0,
+    );
+    const cancelled = await f.call(f.ca, 'mesh_operation', {
+      operationId: active.operationId,
+      cancel: true,
+    });
+    assert.equal(cancelled.state, 'cancelled');
+  },
+);
 
 test('discussion profile exposes only communication tools and gives each peer one partner', async (t) => {
   const f = await fixture('discussion');
@@ -653,6 +713,38 @@ test('independent MCP peers consult over A2A, publish in one checkout, and compl
     /Should zero be represented/,
   );
   assert.match(await readFile(join(exportDir, 'messages.json'), 'utf8'), /starts at zero/);
+  const operatorHeaders = { Authorization: `Bearer ${f.daemon.operatorToken}` };
+  const forbidden = await fetch(f.daemon.url + '/observer/runs', {
+    headers: { Authorization: `Bearer ${f.a.token}` },
+  });
+  assert.equal(forbidden.status, 401);
+  const inspected = await fetch(f.daemon.url + '/observer/runs', { headers: operatorHeaders });
+  assert.equal(inspected.status, 200);
+  assert.equal(((await inspected.json()) as any).runs.length, 2);
+  const invalidCursor = await fetch(f.daemon.url + '/observer/events/stream?after=invalid', {
+    headers: operatorHeaders,
+  });
+  assert.equal(invalidCursor.status, 400);
+  const cutoff = events.at(-1)!.seq;
+  const initialEvents = events.filter((e) => e.kind.startsWith('message.'));
+  const streamUrl = `${f.daemon.url}/observer/events/stream?kindPrefix=message.&until=${cutoff}&limit=2`;
+  const streamed = await fetch(streamUrl, { headers: operatorHeaders });
+  assert.match(streamed.headers.get('content-type')!, /text\/event-stream/);
+  const body = await streamed.text();
+  assert.ok(body.includes('Should zero be represented'));
+  const ids = [...body.matchAll(/^id: (\d+)$/gm)].map((m) => m[1]);
+  assert.deepEqual(
+    ids,
+    initialEvents.map((e) => e.seq),
+  );
+  const replay = await fetch(streamUrl, {
+    headers: { ...operatorHeaders, 'Last-Event-ID': initialEvents[0].seq },
+  });
+  const replayIds = [...(await replay.text()).matchAll(/^id: (\d+)$/gm)].map((m) => m[1]);
+  assert.deepEqual(
+    replayIds,
+    initialEvents.slice(1).map((e) => e.seq),
+  );
 });
 
 test('yield releases claims without ending a live peer; corrected path claims can publish', async (t) => {

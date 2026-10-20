@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
-import { readFile, open, stat, realpath } from 'node:fs/promises';
+import { readFile, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { resolve, join } from 'node:path';
-import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import { PgDatabase } from './db.js';
 import { startDaemon } from './daemon.js';
@@ -12,7 +11,7 @@ import { mailboxHookMain } from './mailbox-hook.js';
 import { preflightCodex } from './codex.js';
 import { assertSandboxAvailable } from './sandbox.js';
 import { hash } from './store.js';
-import { readEvents, redact, registerSecret, type TraceFilter } from './trace.js';
+import { redact, registerSecret, type TraceFilter } from './trace.js';
 import {
   status,
   digest,
@@ -22,6 +21,10 @@ import {
   exportEvents,
   exportMission,
 } from './observer.js';
+import { listConversationMessages, conversationTimeline } from './conversations.js';
+import { listRuns } from './runs.js';
+import { streamLog, traceEvents, writeOutput } from './streams.js';
+import { verifyExport } from './artifacts.js';
 import { invariant } from './types.js';
 
 const HELP = `mesh-exec — independent Codex peers in one shared checkout
@@ -34,13 +37,18 @@ Run:
 
 Observe (works after the runner stops):
   mesh status --mission <id>
+  mesh runs --mission <id> [--agent A1] [--run <id>] [--cursor <cursor>]
   mesh digest --mission <id> [--after <cursor>]
   mesh trace --mission <id> --follow [--agent A1] [--run <id>] [--task <id>]
+  mesh trace --mission <id> --kind-prefix message. [--trace-id <id>] [--until <seq>]
   mesh messages --mission <id> [--agent A1] [--task <id>] [--pending]
-  mesh logs --mission <id> --run <id> [--stream stderr] [--follow]
+  mesh messages --mission <id> --all [--state <state>] [--cursor <cursor>]
+  mesh conversation --mission <id> --task <id> [--cursor <cursor>]
+  mesh logs --mission <id> --run <id> [--stream stderr] [--offset <bytes>] [--follow]
   mesh logs --mission <id> --operation <id> [--stream stderr]
   mesh export --mission <id> --out ./mission-export
   mesh export --mission <id> --out ./events.jsonl --events-only
+  mesh verify-export ./mission-export
   mesh metrics --mission <id>
 
 Runtime options:
@@ -51,6 +59,7 @@ Runtime options:
   --timeout <duration>     Wall-clock limit, e.g. 30m; replaces the default run budget
   --run-minutes <n>        Per-run time limit; default 20
   --heavy-commands <n>     Concurrent tool commands; default 2
+  --queued-commands <n>    Additional accepted command backlog; default 32 (0 disables)
   --model <name>           Use the specified Codex model
   --effort <level>         Set Codex reasoning effort, e.g. high
   --codex <path>           Codex executable; default codex
@@ -84,12 +93,12 @@ export function codexSettings(
   return { model, effort };
 }
 
-function numberOption(value: unknown, fallback: number, name: string): number {
+function numberOption(value: unknown, fallback: number, name: string, minimum = 1): number {
   const n = value === undefined ? fallback : Number(value);
   invariant(
-    Number.isSafeInteger(n) && n > 0,
+    Number.isSafeInteger(n) && n >= minimum,
     'INVALID_OPTION',
-    `${name} must be a positive integer`,
+    `${name} must be a ${minimum === 0 ? 'nonnegative' : 'positive'} integer`,
   );
   return n;
 }
@@ -144,6 +153,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
       timeout: { type: 'string' },
       'run-minutes': { type: 'string' },
       'heavy-commands': { type: 'string' },
+      'queued-commands': { type: 'string' },
       model: { type: 'string' },
       effort: { type: 'string' },
       codex: { type: 'string' },
@@ -157,10 +167,19 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
       message: { type: 'string' },
       operation: { type: 'string' },
       correlation: { type: 'string' },
+      'trace-id': { type: 'string' },
+      'span-id': { type: 'string' },
       kind: { type: 'string' },
+      'kind-prefix': { type: 'string' },
       after: { type: 'string' },
+      until: { type: 'string' },
+      cursor: { type: 'string' },
+      offset: { type: 'string' },
+      state: { type: 'string' },
+      outbox: { type: 'string' },
       limit: { type: 'string' },
       pending: { type: 'boolean' },
+      all: { type: 'boolean' },
       stream: { type: 'string' },
       out: { type: 'string' },
       'events-only': { type: 'boolean' },
@@ -177,6 +196,14 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   }
   if (values.help || command === 'help') {
     process.stdout.write(HELP);
+    return;
+  }
+  if (command === 'verify-export') {
+    const directory = positionals[1] ?? values.out;
+    invariant(directory, 'OUTPUT_REQUIRED', 'Specify an exported mission directory');
+    const result = await verifyExport(resolve(directory));
+    await writeOutput(process.stdout, JSON.stringify(result, null, 2) + '\n');
+    if (!result.valid) process.exitCode = 1;
     return;
   }
   let config: Config = {};
@@ -304,6 +331,12 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
           2,
           'heavy-commands',
         ),
+        maxQueuedCommands: numberOption(
+          values['queued-commands'] ?? config.queuedCommands,
+          32,
+          'queued-commands',
+          0,
+        ),
         config: {
           workflow: config.workflow ?? 'implementation',
           verification: verification ?? [],
@@ -375,8 +408,27 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
       process.stdout.write(await metrics(db, missionId));
       return;
     }
+    if (command === 'runs') {
+      await writeOutput(
+        process.stdout,
+        JSON.stringify(
+          await listRuns(db, missionId, {
+            agent: values.agent,
+            run: values.run,
+            state: values.state,
+            cursor: values.cursor,
+            limit: values.limit ? numberOption(values.limit, 128, 'limit') : undefined,
+          }),
+          null,
+          2,
+        ) + '\n',
+        shutdown.signal,
+      );
+      return;
+    }
     const filter: TraceFilter = {
       after: values.after ?? '0',
+      until: values.until,
       limit: values.limit ? numberOption(values.limit, 200, 'limit') : 200,
       agent: values.agent,
       run: values.run,
@@ -384,23 +436,45 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
       message: values.message,
       operation: values.operation,
       correlation: values.correlation,
+      traceId: values['trace-id'],
+      spanId: values['span-id'],
       kind: values.kind,
+      kindPrefix: values['kind-prefix'],
     };
     if (command === 'trace') {
-      do {
-        const batch = await readEvents(db, missionId, filter);
-        for (const event of batch) {
-          process.stdout.write(JSON.stringify(event) + '\n');
-          filter.after = event.seq;
-        }
-        if (!values.follow) break;
-        if (batch.length < (filter.limit ?? 200))
-          await delay(500, undefined, { signal: shutdown.signal }).catch(() => {});
-      } while (!shutdown.signal.aborted);
+      for await (const event of traceEvents(db, missionId, filter, {
+        follow: values.follow,
+        signal: shutdown.signal,
+      }))
+        if (!(await writeOutput(process.stdout, JSON.stringify(event) + '\n', shutdown.signal)))
+          break;
+      return;
+    }
+    if (command === 'conversation' || (command === 'messages' && values.all)) {
+      invariant(
+        !values.pending,
+        'INVALID_OPTION',
+        '--pending applies to delivered mailbox messages; use --state with --all',
+      );
+      const query = {
+        agent: values.agent,
+        task: values.task,
+        message: values.message,
+        outbox: values.outbox,
+        state: values.state,
+        cursor: values.cursor,
+        limit: values.limit ? numberOption(values.limit, 100, 'limit') : undefined,
+      };
+      const result =
+        command === 'conversation'
+          ? await conversationTimeline(db, missionId, query)
+          : await listConversationMessages(db, missionId, query);
+      await writeOutput(process.stdout, JSON.stringify(result, null, 2) + '\n', shutdown.signal);
       return;
     }
     if (command === 'messages') {
-      process.stdout.write(
+      await writeOutput(
+        process.stdout,
         JSON.stringify(
           await messages(db, missionId, {
             agent: values.agent,
@@ -412,6 +486,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
           null,
           2,
         ) + '\n',
+        shutdown.signal,
       );
       return;
     }
@@ -426,25 +501,11 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
         operation: values.operation,
         stream: values.stream as 'stdout' | 'stderr' | undefined,
       });
-      const file = await open(path, 'r');
-      let offset = 0;
-      try {
-        do {
-          const buffer = Buffer.alloc(64 * 1024);
-          let read;
-          do {
-            read = await file.read(buffer, 0, buffer.length, offset);
-            if (read.bytesRead) {
-              process.stdout.write(buffer.subarray(0, read.bytesRead));
-              offset += read.bytesRead;
-            }
-          } while (read.bytesRead);
-          if (!values.follow) break;
-          await delay(500, undefined, { signal: shutdown.signal }).catch(() => {});
-        } while (!shutdown.signal.aborted);
-      } finally {
-        await file.close();
-      }
+      await streamLog(path, process.stdout, {
+        offset: values.offset === undefined ? 0 : Number(values.offset),
+        follow: values.follow,
+        signal: shutdown.signal,
+      });
       return;
     }
     if (command === 'export') {

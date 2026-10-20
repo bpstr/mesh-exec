@@ -3,15 +3,19 @@ import { createServer, type Server } from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { A2aService, A2A_SCHEMA } from './a2a.js';
 import { Workspace, WORKSPACE_SCHEMA, type WorkspaceOptions } from './workspace.js';
 import { Store } from './store.js';
 import { Completion } from './completion.js';
 import { MeshTools } from './tools.js';
-import { readEvents, registerSecret, redact } from './trace.js';
+import { readEvents, registerSecret, redact, type TraceFilter } from './trace.js';
 import { metrics, status, messages } from './observer.js';
-import { invariant, type Database, type EventSink, type Principal } from './types.js';
+import { listConversationMessages, conversationTimeline } from './conversations.js';
+import { listRuns } from './runs.js';
+import { writeOutput } from './streams.js';
+import { invariant, MeshError, type Database, type EventSink, type Principal } from './types.js';
 
 export interface DaemonOptions {
   db: Database;
@@ -23,6 +27,7 @@ export interface DaemonOptions {
   port?: number;
   config?: Record<string, unknown>;
   maxCommands?: number;
+  maxQueuedCommands?: number;
   workspace?: Partial<Pick<WorkspaceOptions, 'commandBuilder' | 'terminate' | 'lockDirectory'>>;
 }
 export interface RunningDaemon {
@@ -39,6 +44,46 @@ export interface RunningDaemon {
 }
 const bearer = (request: express.Request): string =>
   request.headers.authorization?.match(/^Bearer (\S+)$/)?.[1] ?? '';
+
+function queryText(query: Record<string, unknown>, name: string): string | undefined {
+  const value = query[name];
+  invariant(
+    value === undefined || (typeof value === 'string' && value.length <= 4096),
+    'INVALID_QUERY',
+    `${name} must be a single string of at most 4096 characters`,
+  );
+  return value as string | undefined;
+}
+function eventQuery(query: Record<string, unknown>): TraceFilter {
+  const limit = queryText(query, 'limit');
+  return {
+    after: queryText(query, 'after'),
+    until: queryText(query, 'until'),
+    limit: limit === undefined ? 200 : Number(limit),
+    agent: queryText(query, 'agent'),
+    run: queryText(query, 'run'),
+    task: queryText(query, 'task'),
+    message: queryText(query, 'message'),
+    operation: queryText(query, 'operation'),
+    correlation: queryText(query, 'correlation'),
+    traceId: queryText(query, 'traceId'),
+    spanId: queryText(query, 'spanId'),
+    kind: queryText(query, 'kind'),
+    kindPrefix: queryText(query, 'kindPrefix'),
+  };
+}
+function conversationQuery(query: Record<string, unknown>) {
+  const limit = queryText(query, 'limit');
+  return {
+    agent: queryText(query, 'agent'),
+    task: queryText(query, 'task'),
+    message: queryText(query, 'message'),
+    outbox: queryText(query, 'outbox'),
+    state: queryText(query, 'state'),
+    cursor: queryText(query, 'cursor'),
+    limit: limit === undefined ? undefined : Number(limit),
+  };
+}
 
 export async function startDaemon(options: DaemonOptions): Promise<RunningDaemon> {
   const repo = await realpath(options.repo);
@@ -80,6 +125,7 @@ export async function startDaemon(options: DaemonOptions): Promise<RunningDaemon
     events: workspaceEvents,
     authorize: (...args) => store.authorize(...args),
     maxCommands: options.maxCommands,
+    maxQueuedCommands: options.maxQueuedCommands,
     ...options.workspace,
   });
   let server: Server | undefined;
@@ -258,25 +304,92 @@ export async function startDaemon(options: DaemonOptions): Promise<RunningDaemon
     app.get('/observer/status', operator, async (_req, res) =>
       res.json(await status(options.db, missionId)),
     );
-    app.get('/observer/events', operator, async (req, res) =>
+    app.get('/observer/runs', operator, async (req, res) => {
+      const limit = queryText(req.query, 'limit');
       res.json(
-        await readEvents(options.db, missionId, {
-          after: String(req.query.after ?? '0'),
-          limit: Number(req.query.limit ?? 200),
-          agent: req.query.agent as string | undefined,
-          run: req.query.run as string | undefined,
-          task: req.query.task as string | undefined,
-          message: req.query.message as string | undefined,
-          operation: req.query.operation as string | undefined,
-          kind: req.query.kind as string | undefined,
+        await listRuns(options.db, missionId, {
+          agent: queryText(req.query, 'agent'),
+          run: queryText(req.query, 'run'),
+          state: queryText(req.query, 'state'),
+          cursor: queryText(req.query, 'cursor'),
+          limit: limit === undefined ? undefined : Number(limit),
         }),
-      ),
+      );
+    });
+    app.get('/observer/events', operator, async (req, res) =>
+      res.json(await readEvents(options.db, missionId, eventQuery(req.query))),
+    );
+    app.get('/observer/events/stream', operator, async (req, res) => {
+      const filter = eventQuery(req.query);
+      filter.after ??= req.get('Last-Event-ID') ?? '0';
+      // Validate the query before committing SSE headers so invalid cursors return 400.
+      let batch = await readEvents(options.db, missionId, filter);
+      if (res.destroyed) return;
+      const abort = new AbortController();
+      const onClose = () => abort.abort();
+      res.once('close', onClose);
+      res.status(200).set({
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'X-Accel-Buffering': 'no',
+      });
+      res.flushHeaders();
+      let heartbeat = Date.now();
+      try {
+        await writeOutput(res, 'retry: 1000\n\n', abort.signal);
+        while (!abort.signal.aborted) {
+          for (const event of batch) {
+            if (
+              !(await writeOutput(
+                res,
+                `id: ${event.seq}\nevent: mesh.trace\ndata: ${JSON.stringify(event)}\n\n`,
+                abort.signal,
+              ))
+            )
+              return;
+            filter.after = event.seq;
+          }
+          const caughtUp = batch.length < Math.min(filter.limit ?? 200, 2000);
+          if (filter.until !== undefined && caughtUp) break;
+          if (Date.now() - heartbeat >= 16_000) {
+            if (!(await writeOutput(res, ': keepalive\n\n', abort.signal))) return;
+            heartbeat = Date.now();
+          }
+          if (caughtUp) await delay(500, undefined, { signal: abort.signal });
+          if (!abort.signal.aborted) batch = await readEvents(options.db, missionId, filter);
+        }
+      } catch (error) {
+        if (!abort.signal.aborted) {
+          // Never silently end a stream after a database/read failure.
+          await writeOutput(
+            res,
+            `event: mesh.error\ndata: ${JSON.stringify(
+              redact({
+                error: error instanceof Error ? error.message : String(error),
+              }),
+            )}\n\n`,
+            abort.signal,
+          ).catch(() => false);
+        }
+      } finally {
+        res.off('close', onClose);
+        abort.abort();
+        if (!res.destroyed) res.end();
+      }
+    });
+    app.get('/observer/conversations/messages', operator, async (req, res) =>
+      res.json(await listConversationMessages(options.db, missionId, conversationQuery(req.query))),
+    );
+    app.get('/observer/conversations/events', operator, async (req, res) =>
+      res.json(await conversationTimeline(options.db, missionId, conversationQuery(req.query))),
     );
     app.get('/observer/messages', operator, async (req, res) =>
       res.json(
         await messages(options.db, missionId, {
-          agent: req.query.agent as string | undefined,
-          task: req.query.task as string | undefined,
+          agent: queryText(req.query, 'agent'),
+          task: queryText(req.query, 'task'),
+          message: queryText(req.query, 'message'),
+          limit: req.query.limit === undefined ? undefined : Number(queryText(req.query, 'limit')),
           pending: req.query.pending === 'true',
         }),
       ),
@@ -293,8 +406,19 @@ export async function startDaemon(options: DaemonOptions): Promise<RunningDaemon
       ) => {
         if (!res.headersSent)
           res
-            .status(500)
-            .json({ error: redact(error instanceof Error ? error.message : String(error)) });
+            .status(
+              error instanceof MeshError
+                ? error.code === 'NOT_FOUND'
+                  ? 404
+                  : error.code.startsWith('INVALID_')
+                    ? 400
+                    : 500
+                : 500,
+            )
+            .json({
+              error: redact(error instanceof Error ? error.message : String(error)),
+              ...(error instanceof MeshError ? { code: error.code } : {}),
+            });
       },
     );
     let reconcileWork: Promise<unknown> | undefined;
@@ -320,7 +444,19 @@ export async function startDaemon(options: DaemonOptions): Promise<RunningDaemon
       JSON.stringify({ missionId, url, operatorToken, pid: process.pid, repo }, null, 2) + '\n',
       { mode: 0o600 },
     );
-    await store.events({ missionId, kind: 'daemon.ready', data: { url, repo, pid: process.pid } });
+    await store.events({
+      missionId,
+      kind: 'daemon.ready',
+      data: {
+        url,
+        repo,
+        pid: process.pid,
+        commandCapacity: {
+          maxCommands: options.maxCommands ?? 2,
+          maxQueuedCommands: options.maxQueuedCommands ?? 32,
+        },
+      },
+    });
     ready = true;
     let closed = false;
     return {

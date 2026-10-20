@@ -6,11 +6,37 @@ import test from 'node:test';
 import {
   buildCodexInvocation,
   codexEnvironment,
+  CodexEventTracker,
   parseCodexRunResult,
   preflightCodex,
   prepareCodexRunFiles,
   StreamingRedactor,
 } from '../src/codex.js';
+
+test('native Codex correlation carries observed thread and turn IDs without inventing them', () => {
+  const tracker = new CodexEventTracker();
+  assert.deepEqual(tracker.observe({ type: 'turn.started' }), {});
+  assert.deepEqual(tracker.observe({ type: 'thread.started', thread_id: 'thread-1' }), {
+    threadId: 'thread-1',
+  });
+  assert.deepEqual(tracker.observe({ type: 'turn.started', turn_id: 'turn-1' }), {
+    threadId: 'thread-1',
+    turnId: 'turn-1',
+  });
+  assert.deepEqual(tracker.observe({ type: 'item.completed', item: { id: 'item-7' } }), {
+    threadId: 'thread-1',
+    turnId: 'turn-1',
+    itemId: 'item-7',
+  });
+  assert.deepEqual(tracker.observe({ type: 'turn.completed' }), {
+    threadId: 'thread-1',
+    turnId: 'turn-1',
+  });
+  assert.deepEqual(tracker.observe({ type: 'turn.started' }), { threadId: 'thread-1' });
+  assert.deepEqual(tracker.observe({ type: 'thread.started', thread_id: 'thread-2' }), {
+    threadId: 'thread-2',
+  });
+});
 
 test('fresh Codex invocation isolates config, preserves auth, and uses one initial prompt', async () => {
   const temporary = await mkdtemp(join(tmpdir(), 'mesh-codex-'));

@@ -33,6 +33,8 @@ CREATE INDEX IF NOT EXISTS trace_runs ON trace_events(mission_id,run_id,seq);
 CREATE INDEX IF NOT EXISTS trace_messages ON trace_events(mission_id,message_id,seq);
 CREATE INDEX IF NOT EXISTS trace_tasks ON trace_events(mission_id,task_id,seq);
 CREATE INDEX IF NOT EXISTS trace_correlation ON trace_events(mission_id,correlation_id,seq);
+CREATE INDEX IF NOT EXISTS trace_trace_id ON trace_events(mission_id,trace_id,seq);
+CREATE INDEX IF NOT EXISTS trace_spans ON trace_events(mission_id,span_id,seq);
 CREATE TABLE IF NOT EXISTS requirements (
   mission_id text NOT NULL REFERENCES missions(id), id text NOT NULL, revision integer NOT NULL DEFAULT 1,
   anchor text NOT NULL, title text NOT NULL, criteria jsonb NOT NULL, state text NOT NULL DEFAULT 'open',

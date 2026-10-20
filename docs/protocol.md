@@ -56,6 +56,8 @@ The table lists required arguments and important options. Tools return JSON in M
 
 `mesh_exec` and `mesh_propose_completion` return before the long operation finishes. Acceptance of the request is not a passing command or completed mission. `mesh_patch` is a bounded synchronous publication and also leaves a durable operation record.
 
+Command admission is bounded separately from execution. A new `mesh_exec` exceeding the configured accepted-work limit returns `command_queue_full` with `retryable: true`, observed capacity, and no workspace operation record. An identical accepted replay returns its existing handle even at capacity; changed arguments still conflict. Canceled execution-capacity waiters are removed before their run is released. See [workload boundaries](workloads.md) for the settings and exact scope.
+
 ## A normal run
 
 1. Call `mesh_join`, inspect applicable repository instructions, read the board, and call `mesh_poll`.

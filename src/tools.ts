@@ -699,7 +699,7 @@ export class MeshTools {
     );
     tool(
       'mesh_exec',
-      'Start a bounded command and return an operation handle immediately. cwd is repository-relative: omit it or use "." for the root, never an absolute path. Read commands have confined source access; mutate requires a whole-workspace claim. Use MESH_OUTPUT_DIR for generated output.',
+      'Start a bounded command and return an operation handle immediately. cwd is repository-relative: omit it or use "." for the root, never an absolute path. Read commands have confined source access; mutate requires a whole-workspace claim. Use MESH_OUTPUT_DIR for generated output. command_queue_full means no operation was accepted: inspect outstanding operations or retry the same operation ID later without busy-polling.',
       {
         operationId: id,
         claimId: id.optional(),

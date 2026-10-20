@@ -138,18 +138,19 @@ with the flags above or the supplied configuration example.
 
 ### Budgets and population
 
-| Option             | Default                                                 | Meaning                                                                           |
-| ------------------ | ------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `--agents`         | `10`                                                    | Maximum managed Codex processes at once; creates stable slots for a new mission   |
-| `--max-runs`       | `100`                                                   | Total run starts permitted during this invocation, across all slots               |
-| `--max-minutes`    | `120`                                                   | Wall-clock budget for this runner invocation                                      |
-| `--timeout`        | Unset                                                   | Duration such as `30m`; overrides `--max-minutes` and removes the default run cap |
-| `--run-minutes`    | `20`                                                    | Maximum duration of an individual Codex run                                       |
-| `--heavy-commands` | `2`                                                     | Separate capacity for daemon-managed commands                                     |
-| `--port`           | `7331`                                                  | Loopback HTTP port; `0` selects a free port                                       |
-| `--model`          | CLI default                                             | Model name passed to Codex                                                        |
-| `--codex`          | `codex`                                                 | Codex executable path                                                             |
-| `--state-dir`      | Per-checkout directory under the user's state directory | Runtime state and logs, outside the checkout                                      |
+| Option              | Default                                                 | Meaning                                                                           |
+| ------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `--agents`          | `10`                                                    | Maximum managed Codex processes at once; creates stable slots for a new mission   |
+| `--max-runs`        | `100`                                                   | Total run starts permitted during this invocation, across all slots               |
+| `--max-minutes`     | `120`                                                   | Wall-clock budget for this runner invocation                                      |
+| `--timeout`         | Unset                                                   | Duration such as `30m`; overrides `--max-minutes` and removes the default run cap |
+| `--run-minutes`     | `20`                                                    | Maximum duration of an individual Codex run                                       |
+| `--heavy-commands`  | `2`                                                     | Separate capacity for daemon-managed commands                                     |
+| `--queued-commands` | `32`                                                    | Additional accepted command backlog; `0` disables the extra backlog               |
+| `--port`            | `7331`                                                  | Loopback HTTP port; `0` selects a free port                                       |
+| `--model`           | CLI default                                             | Model name passed to Codex                                                        |
+| `--codex`           | `codex`                                                 | Codex executable path                                                             |
+| `--state-dir`       | Per-checkout directory under the user's state directory | Runtime state and logs, outside the checkout                                      |
 
 To maintain five agents for up to 30 minutes, with capacity to replace exited processes:
 
@@ -168,6 +169,8 @@ mesh run --repo /path/to/repo --roadmap ROADMAP.md --agents 50 --max-runs 500 --
 Set `--agents 100 --max-runs 1000` to configure a hundred slots and ten generations per slot on average. These are capacity settings, not measured performance guarantees. The run budget is global, so fast-finishing slots can use more generations than slow ones. PostgreSQL contention, verification capacity, machine resources, and Codex account limits can constrain useful concurrency. The heavy-command limit remains independent of the agent limit.
 
 The optional [configuration example](examples/mesh.config.json) uses the same settings in JSON. Explicit command-line values take precedence for the corresponding invocation settings.
+
+Accepted nonterminal commands are bounded by `heavyCommands + queuedCommands`, including prepared and finalizing operations. A full backlog returns `command_queue_full` without accepting another operation; matching retries still return their existing handle. Cancellation removes an operation waiting for an execution permit or pre-execution source gate. See [workload boundaries](docs/workloads.md) for the counting rules, lifecycle behavior, trace events, and limits of this bound.
 
 After acceptance, existing agents have up to 30 seconds to save final checkpoints,
 emit structured handoffs and report CLI token usage. Set `completionGraceMs` in
@@ -216,16 +219,23 @@ Observation commands query PostgreSQL directly, so they remain usable after the 
 
 ```bash
 mesh status --mission MISSION_ID
+mesh runs --mission MISSION_ID --agent A1
+mesh runs --mission MISSION_ID --run RUN_ID
 mesh digest --mission MISSION_ID
 mesh digest --mission MISSION_ID --after CURSOR
 mesh trace --mission MISSION_ID --follow
 mesh messages --mission MISSION_ID --agent A1 --pending
+mesh messages --mission MISSION_ID --all
+mesh conversation --mission MISSION_ID --task TASK_ID
 mesh logs --mission MISSION_ID --run RUN_ID --stream stderr
 mesh export --mission MISSION_ID --out ./mission-export
+mesh verify-export ./mission-export
 mesh metrics --mission MISSION_ID
 ```
 
 Full internal A2A text and structured message parts are retained, with receipt, exposure, acknowledgement, reply, and task state recorded separately. Complete stdout/stderr streams are captured in private runtime files outside worker-writable output directories. Known credentials are redacted. The trace records the outputs the CLI exposes; it does not promise access to hidden model reasoning.
+
+`messages --all` includes queued and failed outgoing intents, so a question is visible before it reaches an inbox. `conversation` follows the linked transport, exposure, handling, and reply events across replacement runs. Per-run `capture.json` manifests record bytes, hashes, end-of-stream, index completeness, prompt and handoff artifacts, and capture failures. Export bundles have a fixed database snapshot and event boundary, streamed file copies, integrity metadata, and explicit partial/missing reports. `verify-export` checks a bundle offline. An authenticated SSE event feed supports live operator integrations and replay with `Last-Event-ID`.
 
 See [observability](docs/observability.md) for filters, correlation IDs, exports, metric names, and the difference between delivery and handling.
 
@@ -237,4 +247,4 @@ The supported baseline handles inbox messages explicitly at work transitions. Id
 
 The source manifest includes Git-tracked paths and untracked paths that are not ignored, with content hashes, types, and modes. Ignored dependencies, ignored generated outputs, external services, and arbitrary host state are outside that source basis. `mesh_patch` publishes complete UTF-8 file replacements or deletions; it is not a binary-file editing API. All agent writes use the guarded workspace service, and only one daemon owns the checkout. An unrelated host process writing into the checkout is outside this coordination contract.
 
-The automated suite uses PGlite for datastore fixtures, actual local A2A HTTP with the official SDK, real MCP clients, and controlled worker-process substitutes. [CI](https://github.com/bpstr/mesh-exec/actions/workflows/ci.yml) passes 40 tests on Linux with Node 22/24 and PostgreSQL 17, and on macOS with Node 24. Both platforms require real OS confinement tests without skips. The [five-agent Sol 6.1 sample run](artifacts/efficiency-2026-10-20/REPORT.md) reached acceptance, passed all 12 generated tests, and captured all five final handoffs and usage receipts using Codex CLI 0.160.0 on macOS. Earlier failed runs remain preserved. This supports a bounded real-project pilot; optional hooks, production workloads, and sustained 10/50/100-agent operation still need qualification.
+The automated suite uses PGlite for datastore fixtures, actual local A2A HTTP with the official SDK, real MCP clients, and controlled worker-process substitutes. [CI](https://github.com/bpstr/mesh-exec/actions/workflows/ci.yml) runs the suite on Linux with Node 22/24 and PostgreSQL 17, and on macOS with Node 24. Both platforms require real OS confinement tests without skips. The [five-agent Sol 6.1 sample run](artifacts/efficiency-2026-10-20/REPORT.md) reached acceptance, passed all 12 generated tests, and captured all five final handoffs and usage receipts using Codex CLI 0.160.0 on macOS. Earlier failed runs remain preserved. This supports a bounded real-project pilot; optional hooks, production workloads, and sustained 10/50/100-agent operation still need qualification.

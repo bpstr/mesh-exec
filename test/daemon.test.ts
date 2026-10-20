@@ -96,6 +96,34 @@ test('participation waits keep sessions live, fence expired runs, and allow term
   assert.equal(completed.wakeReason, 'mission-terminal');
 });
 
+test('budget exhaustion wakes long waits and permits final receipts but refuses new work', async (t) => {
+  const f = await fixture();
+  t.after(f.close);
+  const tools = await f.cb.listTools();
+  const wait = tools.tools.find((tool) => tool.name === 'mesh_wait')!;
+  assert.equal((wait.inputSchema.properties!.waitMs as any).maximum, 300_000);
+  const pending = f.call(f.cb, 'mesh_wait');
+  await waitForWaitStarted(f, 1);
+  await f.daemon.store.stopMission(f.daemon.missionId, 'resource-limit', 'Prepared budget cutoff');
+  assert.equal((await pending).mayExit, true);
+  assert.equal((await f.call(f.cb, 'mesh_wait')).wakeReason, 'mission-terminal');
+  assert.equal((await f.call(f.cb, 'mesh_board')).terminal, true);
+  assert.equal(
+    (await f.call(f.cb, 'mesh_yield', { reason: 'Save partial handoff' })).mayExit,
+    true,
+  );
+  await f.call(f.cb, 'mesh_checkpoint', { body: { summary: 'Partial work, not accepted' } });
+  await assert.rejects(
+    f.call(f.cb, 'mesh_claim', {
+      id: 'after-budget',
+      resources: ['counter.txt'],
+      description: 'Forbidden late work',
+    }),
+    /STALE_RUN/,
+  );
+  assert.equal((await f.daemon.store.mission(f.daemon.missionId)).acceptance, null);
+});
+
 test('checkpoint body is required and malformed checkpoints do not reach persistence', async (t) => {
   const f = await fixture();
   t.after(f.close);

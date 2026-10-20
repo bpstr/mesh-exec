@@ -15,7 +15,7 @@ import {
 test('fresh Codex invocation isolates config, preserves auth, and uses one initial prompt', async () => {
   const temporary = await mkdtemp(join(tmpdir(), 'mesh-codex-'));
   try {
-    const invocation = buildCodexInvocation({
+    const options = {
       repository: join(temporary, 'repo.with dots'),
       roadmapPath: 'ROADMAP.md',
       missionId: 'mission',
@@ -26,12 +26,16 @@ test('fresh Codex invocation isolates config, preserves auth, and uses one initi
       mcpUrl: 'http://127.0.0.1:9010/mcp',
       runToken: 'per-run-credential-do-not-log',
       environment: { CODEX_HOME: '/chosen/auth', PATH: process.env.PATH },
-    });
+      model: 'gpt-6.1-sol',
+      effort: 'high',
+    };
+    const invocation = buildCodexInvocation(options);
     const args = invocation.args;
     assert.equal(args[0], 'exec');
     assert.equal(args.at(-1), '-');
     for (const flag of [
       '--ignore-user-config',
+      '--skip-git-repo-check',
       '--strict-config',
       '--json',
       '--output-schema',
@@ -53,6 +57,15 @@ test('fresh Codex invocation isolates config, preserves auth, and uses one initi
       args.includes(`projects={${JSON.stringify(invocation.cwd)}={trust_level="untrusted"}}`),
     );
     assert.ok(args.includes('mcp_servers.mesh.required=true'));
+    assert.ok(args.includes('mcp_servers.mesh.tool_timeout_sec=330'));
+    assert.equal(args[args.indexOf('--model') + 1], 'gpt-6.1-sol');
+    assert.ok(args.includes('model_reasoning_effort="high"'));
+    const outer = buildCodexInvocation({ ...options, externallySandboxed: true });
+    assert.ok(outer.args.includes('--dangerously-bypass-approvals-and-sandbox'));
+    assert.ok(!outer.args.includes('--sandbox'));
+    assert.equal(outer.env.CODEX_HOME, '/chosen/auth');
+    for (const effort of ['', 'high"\nunsafe=true', 'A'.repeat(51)])
+      assert.throws(() => buildCodexInvocation({ ...options, effort }), /Reasoning effort/);
     assert.ok(!JSON.stringify(args).includes(invocation.env.MESH_RUN_TOKEN!));
     assert.equal(invocation.env.CODEX_HOME, '/chosen/auth');
     assert.equal(invocation.env.MESH_RUN_GENERATION, '2');
@@ -128,7 +141,7 @@ test('CLI qualification checks installed help before any model run and rejects m
     await writeFile(
       binary,
       source(
-        '--ignore-user-config --cd --sandbox --ephemeral --json --output-schema --output-last-message --strict-config',
+        '--ignore-user-config --cd --sandbox --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --ephemeral --json --output-schema --output-last-message --strict-config',
       ),
     );
     await chmod(binary, 0o700);

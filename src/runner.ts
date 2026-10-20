@@ -123,7 +123,7 @@ export interface RunMeshOptions {
   maxRuns?: number;
   maxElapsedMs?: number;
   runTimeoutMs?: number;
-  /** Time for existing peers to emit final handoffs/usage after acceptance, within maxElapsedMs. */
+  /** Handoff/usage grace after acceptance; also reserved inside the elapsed budget. */
   completionGraceMs?: number;
   heartbeatMs?: number;
   leaseMs?: number;
@@ -131,6 +131,7 @@ export interface RunMeshOptions {
   restartBackoffMs?: number;
   codexBinary?: string;
   model?: string;
+  effort?: string;
   environment?: NodeJS.ProcessEnv;
   /** These paths must be outside the shared repository. */
   runtimeWritablePaths?: string[];
@@ -425,6 +426,33 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
     () => abort('resource-limit', 'Maximum elapsed time reached'),
     maxElapsedMs,
   );
+  // Close work before the hard cutoff so live peers can finish their JSON turn
+  // and emit usage. Short missions reserve at most ten percent of their budget.
+  const budgetGraceMs = Math.min(completionGraceMs, Math.floor(maxElapsedMs / 10));
+  let budgetDrainWork: Promise<void> | undefined;
+  const budgetDrain = setTimeout(() => {
+    budgetDrainWork = drainBudget().catch((error: unknown) => {
+      fatal ??= error;
+      abort('stalled', 'Budget drain failed');
+    });
+  }, maxElapsedMs - budgetGraceMs);
+  async function drainBudget(): Promise<void> {
+    if (draining || controller.signal.aborted) return;
+    const mission = await options.store.observe(options.missionId);
+    if (draining || controller.signal.aborted) return;
+    if (!['active', 'closing'].includes(mission.state)) return;
+    draining = true;
+    await options.store.stopMission(
+      options.missionId,
+      'resource-limit',
+      'Elapsed budget reserved for final handoffs and usage',
+    );
+    await emit({
+      missionId: options.missionId,
+      kind: 'supervisor.budget-draining',
+      data: { graceMs: budgetGraceMs, deadlineAt: new Date(deadlineAt).toISOString() },
+    });
+  }
   async function drainCompleted(): Promise<void> {
     if (draining || controller.signal.aborted) return;
     draining = true;
@@ -452,7 +480,10 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
         const mission = await options.store.observe(options.missionId);
         if (mission.state === 'completed') {
           await drainCompleted();
-        } else if (!['active', 'closing'].includes(mission.state)) {
+        } else if (
+          !['active', 'closing'].includes(mission.state) &&
+          !(draining && mission.state === 'resource-limit')
+        ) {
           abort('stopped', `Mission is ${mission.state}`);
           return;
         }
@@ -497,8 +528,9 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
       runToken: allocation.token,
       codexBinary: options.codexBinary,
       model: options.model,
+      effort: options.effort,
       environment,
-      externallySandboxed: process.platform === 'darwin',
+      externallySandboxed: true,
     });
     const secrets = [...globalSecrets, allocation.token];
     const runEmit = (input: TraceInput): Promise<unknown> =>
@@ -786,6 +818,7 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
       return null;
     }
     if (observation.state !== 'active') {
+      if (draining && observation.state === 'resource-limit') return null;
       abort('stopped', `Mission is ${observation.state}`);
       return null;
     }
@@ -897,6 +930,8 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
         maxElapsedMs,
         runTimeoutMs,
         completionGraceMs,
+        model: options.model ?? null,
+        effort: options.effort ?? null,
         codex: qualification,
       },
     });
@@ -910,6 +945,7 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
         }),
       ),
     );
+    await budgetDrainWork;
     const latest = await options.store.observe(options.missionId);
     if (controller.signal.aborted && ['active', 'closing'].includes(latest.state)) {
       await options.store.stopMission(options.missionId, abortState, abortReason);
@@ -943,7 +979,9 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
     return summary;
   } finally {
     clearTimeout(deadline);
+    clearTimeout(budgetDrain);
     clearTimeout(completionDrain);
+    await budgetDrainWork;
     options.signal?.removeEventListener('abort', externalAbort);
     if (!controller.signal.aborted) controller.abort();
     await heartbeat;

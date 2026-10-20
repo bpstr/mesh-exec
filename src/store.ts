@@ -223,7 +223,11 @@ export class Store {
         p.missionId,
         p.agentId,
         p.generation,
-        ['active', ...(allowClosing ? ['closing'] : []), ...(allowCompleted ? ['completed'] : [])],
+        [
+          'active',
+          ...(allowClosing ? ['closing'] : []),
+          ...(allowCompleted ? ['completed', 'resource-limit'] : []),
+        ],
       ],
     );
     invariant(

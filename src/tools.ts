@@ -195,7 +195,7 @@ export class MeshTools {
                 // or entering the now-closed workspace/A2A services.
                 if (name === 'mesh_board' || name === 'mesh_yield') {
                   const state = await this.store.observe(p.missionId);
-                  if (state.state === 'completed') {
+                  if (!['active', 'closing'].includes(state.state)) {
                     const participation = await this.participation(p);
                     return name === 'mesh_yield'
                       ? participation
@@ -295,19 +295,19 @@ export class MeshTools {
     );
     tool(
       'mesh_wait',
-      'Stay available in this process for reviews and messages. Wait up to 30000 ms (default 20000) without ending your session. Wakes on inbox delivery, shared work change, or mission termination. While mayExit=false, do useful work or wait again; do not send a final handoff.',
+      'Stay available in this process for reviews and messages. Wait up to 300000 ms (default 120000) without ending your session. Wakes on inbox delivery, shared work change, or mission termination. While mayExit=false, do useful work or wait again; do not send a final handoff.',
       {
         sinceRevision: z
           .string()
           .regex(/^-?\d+$/)
           .optional(),
-        waitMs: z.number().int().min(0).max(30_000).optional(),
+        waitMs: z.number().int().min(0).max(300_000).optional(),
       },
       true,
       async (a) => {
         const first = await this.store.observe(p.missionId);
         const revision = a.sinceRevision ?? first.workRevision;
-        const deadline = Date.now() + (a.waitMs ?? 20_000);
+        const deadline = Date.now() + (a.waitMs ?? 120_000);
         for (;;) {
           const state = await this.store.observe(p.missionId);
           if (!['active', 'closing'].includes(state.state)) {
@@ -528,7 +528,7 @@ export class MeshTools {
       },
       false,
       async (a) => {
-        return this.workspace.withBarrier(async () => {
+        return this.workspace.withSnapshot(async () => {
           if (a.evidence?.files) {
             const read = await this.workspace.read(p, Object.keys(a.evidence.files));
             for (const file of read.files)
@@ -571,7 +571,7 @@ export class MeshTools {
       },
       false,
       async (a) => {
-        return this.workspace.withBarrier(async () => {
+        return this.workspace.withSnapshot(async () => {
           const manifest = await this.workspace.manifest();
           invariant(
             a.manifestHash === manifest.hash,
@@ -590,7 +590,7 @@ export class MeshTools {
       true,
       async (a) =>
         a.manifest
-          ? this.workspace.withBarrier(async () => ({
+          ? this.workspace.withSnapshot(async () => ({
               ...(await this.workspace.read(p, a.paths)),
               manifest: await this.workspace.manifest(),
             }))

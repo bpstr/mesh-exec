@@ -37,7 +37,7 @@ Long commands run behind durable operation handles. Source changes go through on
 
 PostgreSQL is the only additional service. It stores the message board, versioned knowledge and dependency links, task and delivery state, leases, operation metadata, and trace events. PostgreSQL full-text search powers board queries; this version does not require an embedding service or separate graph database.
 
-The worker boundary uses bubblewrap on Linux and Seatbelt (`sandbox-exec`) on macOS. `mesh doctor` actually launches the sandbox; the runner stops if qualification fails. Both platforms enforce source and private audit-file access. Linux also isolates process IDs; macOS cleanup requires cooperative commands to remain in their process group. On macOS the outer sandbox supplies the file boundary, so Codex does not try to nest a second Seatbelt sandbox. Python 3 supplies the OS-held checkout lock through `fcntl.flock`; no VM is required.
+The worker boundary uses bubblewrap on Linux and Seatbelt (`sandbox-exec`) on macOS. `mesh doctor` actually launches the sandbox; the runner stops if qualification fails. Both platforms enforce source and private audit-file access. Linux also isolates process IDs; macOS cleanup requires cooperative commands to remain in their process group. The outer sandbox supplies the file boundary on both platforms, so Codex runs without a second inner sandbox. Python 3 supplies the OS-held checkout lock through `fcntl.flock`; no VM is required.
 
 ### Install the host dependencies
 
@@ -111,6 +111,31 @@ The command prints the mission ID, local daemon URL, and runtime directory. Keep
 
 No predefined task decomposition is required. Peers interpret the roadmap into a requirement ledger and review its coverage. The runner does not assign roles or choose the next requirement for a peer.
 
+### Codex launch settings
+
+Mesh uses the same fresh-session flags as Roadmap Runner: `codex exec --json
+--ephemeral --skip-git-repo-check`, with explicit `--model` and
+`-c model_reasoning_effort` when configured. Set both directly without a wrapper:
+
+```bash
+mesh run --repo /path/to/repo --roadmap ROADMAP.md --model gpt-6.1-sol --effort high
+```
+
+JSON configuration uses `model` and `effort`. CLI values take precedence over
+configuration, then saved mission settings on resume. Selected values appear in
+the supervisor startup event and each run's argument record. Model-specific effort
+support remains the Codex CLI's responsibility.
+
+Managed workers also use `--dangerously-bypass-approvals-and-sandbox`, as Roadmap
+Runner does, inside Mesh's qualified outer OS sandbox. This avoids nested Codex
+sandboxes; source writes still go through guarded Mesh operations. Direct invocation
+construction without an outer boundary defaults to Codex's read-only sandbox.
+
+Mesh reuses the configured Codex credential store but continues to isolate other
+saved user configuration and expose only its Mesh MCP server. Unlike Roadmap
+Runner, it does not inherit the user's model/effort defaults: select them explicitly
+with the flags above or the supplied configuration example.
+
 ### Budgets and population
 
 | Option             | Default                                                 | Meaning                                                                           |
@@ -152,6 +177,20 @@ and workspace work remain closed, and operator cancellation still stops agents
 immediately. A peer that exceeds either deadline is terminated, so a usage receipt
 is only available if the CLI emits it in time. See the
 [offline shutdown validation](artifacts/shutdown-2026-10-20/REPORT.md).
+
+Timed runs also reserve a final handoff window inside their wall-clock limit:
+the smaller of `completionGraceMs` and ten percent of the mission budget.
+At that point the mission becomes `resource-limit`, new work closes, and live
+peers may save partial checkpoints and emit usage before the hard cutoff.
+This does not accept the mission. Missing usage receipts remain unknown.
+
+Idle peers wait for two minutes by default, waking promptly for mail, work
+changes or a terminal mission. Ordinary source snapshots and reviews serialize
+with writers without stopping unrelated read commands; only final acceptance
+uses the draining verification barrier. Managed commands receive a writable
+`GOCACHE` under their own output directory. Prepare the target worktrees' other
+required toolchains and dependencies before starting the clock; Mesh does not
+install missing TypeScript, PHP or JVM tools during a run.
 
 ### Stop and resume
 

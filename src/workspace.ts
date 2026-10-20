@@ -392,6 +392,11 @@ export class Workspace {
     }
   }
 
+  /** Coherent source inspection: serialize with writers, without draining read commands. */
+  async withSnapshot<T>(body: () => Promise<T>): Promise<T> {
+    return this.gated(body);
+  }
+
   async withBarrier<T>(body: (barrier: WorkspaceBarrier) => Promise<T>): Promise<T> {
     this.barriers++;
     try {
@@ -1100,6 +1105,8 @@ export class Workspace {
       ...(input.env ?? {}),
       MESH_OUTPUT_DIR: outputDirectory,
       TMPDIR: outputDirectory,
+      // The host's build cache is read-only inside a managed command.
+      GOCACHE: join(outputDirectory, 'go-build'),
     };
     // Qualify the boundary before accepting the command, not after a model assumes it ran.
     const invocation = await (this.options.commandBuilder ?? buildSandboxInvocation)({

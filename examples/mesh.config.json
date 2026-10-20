@@ -8,6 +8,8 @@
   "runMinutes": 20,
   "heavyCommands": 2,
   "codexBinary": "codex",
+  "model": "gpt-6.1-sol",
+  "effort": "high",
   "port": 7331,
   "verification": [
     ["npm", "run", "typecheck"],

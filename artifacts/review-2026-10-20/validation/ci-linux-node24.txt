@@ -1,0 +1,591 @@
+﻿2026-10-20T16:24:13.3484616Z Current runner version: '2.337.0'
+2026-10-20T16:24:13.3519615Z ##[group]Runner Image Provisioner
+2026-10-20T16:24:13.3521083Z Hosted Compute Agent
+2026-10-20T16:24:13.3522216Z Version: 20261012.601
+2026-10-20T16:24:13.3523579Z Commit: f3dc54e1fb89da6852db922499a0233137369e1d
+2026-10-20T16:24:13.3524884Z Build Date: 2026-10-12T17:48:21Z
+2026-10-20T16:24:13.3526394Z Worker ID: {e7894332-5cd9-47c2-8060-96ffdb25c169}
+2026-10-20T16:24:13.3527824Z Region: centralus
+2026-10-20T16:24:13.3528830Z Cloud: Azure
+2026-10-20T16:24:13.3530076Z ##[endgroup]
+2026-10-20T16:24:13.3532529Z ##[group]Operating System
+2026-10-20T16:24:13.3533811Z Ubuntu
+2026-10-20T16:24:13.3534964Z 22.04.5
+2026-10-20T16:24:13.3536227Z LTS
+2026-10-20T16:24:13.3537248Z ##[endgroup]
+2026-10-20T16:24:13.3538264Z ##[group]Runner Image
+2026-10-20T16:24:13.3539266Z Image: ubuntu-22.04
+2026-10-20T16:24:13.3540318Z Version: 20261012.322.1
+2026-10-20T16:24:13.3542514Z Included Software: https://github.com/actions/runner-images/blob/ubuntu22/20261012.322/images/ubuntu/Ubuntu2204-Readme.md
+2026-10-20T16:24:13.3545240Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu22%2F20261012.322
+2026-10-20T16:24:13.3547205Z ##[endgroup]
+2026-10-20T16:24:13.3549124Z ##[group]GITHUB_TOKEN Permissions
+2026-10-20T16:24:13.3551914Z Contents: read
+2026-10-20T16:24:13.3553029Z Metadata: read
+2026-10-20T16:24:13.3553959Z ##[endgroup]
+2026-10-20T16:24:13.3557303Z Secret source: Actions
+2026-10-20T16:24:13.3558931Z Cache mode: write
+2026-10-20T16:24:13.3560846Z Prepare workflow directory
+2026-10-20T16:24:13.4040833Z Prepare all required actions
+2026-10-20T16:24:13.4113375Z Getting action download info
+2026-10-20T16:24:13.6723956Z Download action repository 'actions/checkout@v7' (SHA:3d3c42e5aac5ba805825da76410c181273ba90b1)
+2026-10-20T16:24:13.7926368Z Download action repository 'actions/setup-node@v7' (SHA:949feb2413d6458794dcd2491c4babbbce0c15c1)
+2026-10-20T16:24:14.3290960Z Complete job name: Node 24 / PostgreSQL 17 / Linux sandbox
+2026-10-20T16:24:14.3857230Z ##[group]Checking docker version
+2026-10-20T16:24:14.3870155Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-20T16:24:14.4670316Z '1.48'
+2026-10-20T16:24:14.4687004Z Docker daemon API version: '1.48'
+2026-10-20T16:24:14.4687895Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-20T16:24:14.4879712Z '1.48'
+2026-10-20T16:24:14.4897346Z Docker client API version: '1.48'
+2026-10-20T16:24:14.4902092Z ##[endgroup]
+2026-10-20T16:24:14.4905638Z ##[group]Clean up resources from previous jobs
+2026-10-20T16:24:14.4911674Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=714956"
+2026-10-20T16:24:14.5077686Z ##[command]/usr/bin/docker network prune --force --filter "label=714956"
+2026-10-20T16:24:14.5233139Z ##[endgroup]
+2026-10-20T16:24:14.5233719Z ##[group]Create local container network
+2026-10-20T16:24:14.5244312Z ##[command]/usr/bin/docker network create --label 714956 github_network_c293b4ed88c24903a415f4e37339d430
+2026-10-20T16:24:14.5812751Z 4b6652b699aa4f24e490be733c34f04922f427fed531a325fb06c0863351a145
+2026-10-20T16:24:14.5837324Z ##[endgroup]
+2026-10-20T16:24:14.5862881Z ##[group]Starting postgres service container
+2026-10-20T16:24:14.5884255Z ##[command]/usr/bin/docker pull postgres:17-bookworm
+2026-10-20T16:24:15.1250772Z 17-bookworm: Pulling from library/postgres
+2026-10-20T16:24:15.2910311Z 7fd1ebe418b5: Pulling fs layer
+2026-10-20T16:24:15.2912537Z a74c50568115: Pulling fs layer
+2026-10-20T16:24:15.2914534Z 017b31e4ff27: Pulling fs layer
+2026-10-20T16:24:15.2916768Z 146d06bcb573: Pulling fs layer
+2026-10-20T16:24:15.2918538Z e7e8da52359d: Pulling fs layer
+2026-10-20T16:24:15.2920301Z d01ea4064291: Pulling fs layer
+2026-10-20T16:24:15.2921998Z 6d0eb3c6cdb9: Pulling fs layer
+2026-10-20T16:24:15.2923610Z b1cc6947b8a6: Pulling fs layer
+2026-10-20T16:24:15.2925265Z e96ba86f00e5: Pulling fs layer
+2026-10-20T16:24:15.2927226Z a219b7b9b5d4: Pulling fs layer
+2026-10-20T16:24:15.2928931Z 584b3a82e541: Pulling fs layer
+2026-10-20T16:24:15.2930899Z d254c075f128: Pulling fs layer
+2026-10-20T16:24:15.2932581Z fb616fac62de: Pulling fs layer
+2026-10-20T16:24:15.2934270Z 7f82c3d75427: Pulling fs layer
+2026-10-20T16:24:15.2936130Z e7e8da52359d: Waiting
+2026-10-20T16:24:15.2937750Z d01ea4064291: Waiting
+2026-10-20T16:24:15.2939288Z 584b3a82e541: Waiting
+2026-10-20T16:24:15.2940840Z 6d0eb3c6cdb9: Waiting
+2026-10-20T16:24:15.2942394Z d254c075f128: Waiting
+2026-10-20T16:24:15.2943999Z b1cc6947b8a6: Waiting
+2026-10-20T16:24:15.2945900Z fb616fac62de: Waiting
+2026-10-20T16:24:15.2947804Z 7f82c3d75427: Waiting
+2026-10-20T16:24:15.2949676Z e96ba86f00e5: Waiting
+2026-10-20T16:24:15.2951514Z a219b7b9b5d4: Waiting
+2026-10-20T16:24:15.2953418Z 146d06bcb573: Waiting
+2026-10-20T16:24:15.4756224Z a74c50568115: Verifying Checksum
+2026-10-20T16:24:15.4758260Z a74c50568115: Download complete
+2026-10-20T16:24:15.5216467Z 017b31e4ff27: Verifying Checksum
+2026-10-20T16:24:15.5219804Z 017b31e4ff27: Download complete
+2026-10-20T16:24:15.6416658Z 7fd1ebe418b5: Verifying Checksum
+2026-10-20T16:24:15.6418584Z 7fd1ebe418b5: Download complete
+2026-10-20T16:24:15.6718646Z 146d06bcb573: Verifying Checksum
+2026-10-20T16:24:15.6720831Z 146d06bcb573: Download complete
+2026-10-20T16:24:15.7956339Z e7e8da52359d: Verifying Checksum
+2026-10-20T16:24:15.7958493Z e7e8da52359d: Download complete
+2026-10-20T16:24:15.8137515Z 6d0eb3c6cdb9: Verifying Checksum
+2026-10-20T16:24:15.8139826Z 6d0eb3c6cdb9: Download complete
+2026-10-20T16:24:15.8402399Z d01ea4064291: Verifying Checksum
+2026-10-20T16:24:15.8404265Z d01ea4064291: Download complete
+2026-10-20T16:24:15.9686859Z b1cc6947b8a6: Verifying Checksum
+2026-10-20T16:24:15.9694805Z b1cc6947b8a6: Download complete
+2026-10-20T16:24:15.9736999Z a219b7b9b5d4: Verifying Checksum
+2026-10-20T16:24:15.9741230Z a219b7b9b5d4: Download complete
+2026-10-20T16:24:16.0985979Z d254c075f128: Download complete
+2026-10-20T16:24:16.1087574Z 584b3a82e541: Verifying Checksum
+2026-10-20T16:24:16.1090178Z 584b3a82e541: Download complete
+2026-10-20T16:24:16.2147873Z fb616fac62de: Verifying Checksum
+2026-10-20T16:24:16.2149778Z fb616fac62de: Download complete
+2026-10-20T16:24:16.2684833Z 7f82c3d75427: Verifying Checksum
+2026-10-20T16:24:16.2688391Z 7f82c3d75427: Download complete
+2026-10-20T16:24:16.4694070Z e96ba86f00e5: Verifying Checksum
+2026-10-20T16:24:16.4696407Z e96ba86f00e5: Download complete
+2026-10-20T16:24:16.9309510Z 7fd1ebe418b5: Pull complete
+2026-10-20T16:24:17.2021340Z a74c50568115: Pull complete
+2026-10-20T16:24:17.3267569Z 017b31e4ff27: Pull complete
+2026-10-20T16:24:17.3609703Z 146d06bcb573: Pull complete
+2026-10-20T16:24:17.6590725Z e7e8da52359d: Pull complete
+2026-10-20T16:24:17.7252871Z d01ea4064291: Pull complete
+2026-10-20T16:24:17.7325206Z 6d0eb3c6cdb9: Pull complete
+2026-10-20T16:24:17.7405638Z b1cc6947b8a6: Pull complete
+2026-10-20T16:24:20.9081814Z e96ba86f00e5: Pull complete
+2026-10-20T16:24:20.9220958Z a219b7b9b5d4: Pull complete
+2026-10-20T16:24:20.9439100Z 584b3a82e541: Pull complete
+2026-10-20T16:24:20.9527014Z d254c075f128: Pull complete
+2026-10-20T16:24:20.9628445Z fb616fac62de: Pull complete
+2026-10-20T16:24:20.9704213Z 7f82c3d75427: Pull complete
+2026-10-20T16:24:20.9741446Z Digest: sha256:3645570cccdfa447589da9f57dd740faa29b30938e861289a5574b6ca6b03826
+2026-10-20T16:24:20.9755651Z Status: Downloaded newer image for postgres:17-bookworm
+2026-10-20T16:24:20.9766841Z docker.io/library/postgres:17-bookworm
+2026-10-20T16:24:20.9846692Z ##[command]/usr/bin/docker create --name d7798223c2c84c668858216213d95b88_postgres17bookworm_7a1bc0 --label 714956 --network github_network_c293b4ed88c24903a415f4e37339d430 --network-alias postgres -p 5432:5432 --health-cmd "pg_isready -U mesh_test -d mesh_test" --health-interval 5s --health-timeout 5s --health-retries 20 -e "POSTGRES_USER=mesh_test" -e "POSTGRES_PASSWORD=mesh-ci-only" -e "POSTGRES_DB=mesh_test" -e GITHUB_ACTIONS=true -e CI=true postgres:17-bookworm
+2026-10-20T16:24:21.0119338Z bef35a5161c2a04c745ee67049126a491f08d8bb0ba0b750a0da0642a51f908a
+2026-10-20T16:24:21.0144620Z ##[command]/usr/bin/docker start bef35a5161c2a04c745ee67049126a491f08d8bb0ba0b750a0da0642a51f908a
+2026-10-20T16:24:21.2347949Z bef35a5161c2a04c745ee67049126a491f08d8bb0ba0b750a0da0642a51f908a
+2026-10-20T16:24:21.2367746Z ##[command]/usr/bin/docker ps --all --filter id=bef35a5161c2a04c745ee67049126a491f08d8bb0ba0b750a0da0642a51f908a --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-20T16:24:21.2551735Z bef35a5161c2a04c745ee67049126a491f08d8bb0ba0b750a0da0642a51f908a Up Less than a second (health: starting)
+2026-10-20T16:24:21.2574681Z ##[command]/usr/bin/docker port bef35a5161c2a04c745ee67049126a491f08d8bb0ba0b750a0da0642a51f908a
+2026-10-20T16:24:21.2764674Z 5432/tcp -> 0.0.0.0:5432
+2026-10-20T16:24:21.2766538Z 5432/tcp -> [::]:5432
+2026-10-20T16:24:21.2805421Z ##[endgroup]
+2026-10-20T16:24:21.2817154Z ##[group]Waiting for all services to be ready
+2026-10-20T16:24:21.2835231Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" bef35a5161c2a04c745ee67049126a491f08d8bb0ba0b750a0da0642a51f908a
+2026-10-20T16:24:21.3016213Z starting
+2026-10-20T16:24:21.3051699Z postgres service is starting, waiting 2 seconds before checking again.
+2026-10-20T16:24:23.3049910Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" bef35a5161c2a04c745ee67049126a491f08d8bb0ba0b750a0da0642a51f908a
+2026-10-20T16:24:23.3210354Z starting
+2026-10-20T16:24:23.3226954Z postgres service is starting, waiting 4 seconds before checking again.
+2026-10-20T16:24:27.5433836Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" bef35a5161c2a04c745ee67049126a491f08d8bb0ba0b750a0da0642a51f908a
+2026-10-20T16:24:27.5591708Z healthy
+2026-10-20T16:24:27.5610670Z postgres service is healthy.
+2026-10-20T16:24:27.5611360Z ##[endgroup]
+2026-10-20T16:24:27.5992079Z ##[group]Run actions/checkout@v7
+2026-10-20T16:24:27.5992660Z with:
+2026-10-20T16:24:27.5992874Z   persist-credentials: false
+2026-10-20T16:24:27.5993152Z   repository: bpstr/mesh-exec
+2026-10-20T16:24:27.5996169Z   token: ***
+2026-10-20T16:24:27.5996396Z   ssh-strict: true
+2026-10-20T16:24:27.5996598Z   ssh-user: git
+2026-10-20T16:24:27.5996783Z   clean: true
+2026-10-20T16:24:27.5996981Z   sparse-checkout-cone-mode: true
+2026-10-20T16:24:27.5997231Z   fetch-depth: 1
+2026-10-20T16:24:27.5997417Z   fetch-tags: false
+2026-10-20T16:24:27.5997617Z   show-progress: true
+2026-10-20T16:24:27.5997818Z   lfs: false
+2026-10-20T16:24:27.5998006Z   submodules: false
+2026-10-20T16:24:27.5998213Z   set-safe-directory: true
+2026-10-20T16:24:27.5998456Z   allow-unsafe-pr-checkout: false
+2026-10-20T16:24:27.5999006Z env:
+2026-10-20T16:24:27.5999460Z   TEST_DATABASE_URL: ***127.0.0.1:5432/mesh_test
+2026-10-20T16:24:27.5999754Z   MESH_REQUIRE_SANDBOX: 1
+2026-10-20T16:24:27.5999971Z ##[endgroup]
+2026-10-20T16:24:27.7077302Z Syncing repository: bpstr/mesh-exec
+2026-10-20T16:24:27.7079033Z ##[group]Getting Git version info
+2026-10-20T16:24:27.7079871Z Working directory is '/home/runner/work/mesh-exec/mesh-exec'
+2026-10-20T16:24:27.7080890Z [command]/usr/bin/git version
+2026-10-20T16:24:27.7207103Z git version 2.55.0
+2026-10-20T16:24:27.7228226Z ##[endgroup]
+2026-10-20T16:24:27.7239054Z Temporarily overriding HOME='/home/runner/work/_temp/ed04bd52-b35e-4ef4-bbdc-f2ea5d7dfdb4' before making global git config changes
+2026-10-20T16:24:27.7240529Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-20T16:24:27.7244416Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/mesh-exec/mesh-exec
+2026-10-20T16:24:27.7282801Z Deleting the contents of '/home/runner/work/mesh-exec/mesh-exec'
+2026-10-20T16:24:27.7286846Z ##[group]Determining repository object format
+2026-10-20T16:24:27.7288563Z ##[endgroup]
+2026-10-20T16:24:27.7289495Z ##[group]Initializing the repository
+2026-10-20T16:24:27.7293070Z [command]/usr/bin/git init /home/runner/work/mesh-exec/mesh-exec
+2026-10-20T16:24:27.7410781Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-20T16:24:27.7413379Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-20T16:24:27.7414871Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-20T16:24:27.7416217Z hint: call:
+2026-10-20T16:24:27.7416796Z hint:
+2026-10-20T16:24:27.7417525Z hint: 	git config --global init.defaultBranch <name>
+2026-10-20T16:24:27.7418374Z hint:
+2026-10-20T16:24:27.7419112Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-20T16:24:27.7420261Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-20T16:24:27.7421117Z hint:
+2026-10-20T16:24:27.7421461Z hint: 	git branch -m <name>
+2026-10-20T16:24:27.7422062Z hint:
+2026-10-20T16:24:27.7422651Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-20T16:24:27.7423809Z Initialized empty Git repository in /home/runner/work/mesh-exec/mesh-exec/.git/
+2026-10-20T16:24:27.7426113Z [command]/usr/bin/git remote add origin https://github.com/bpstr/mesh-exec
+2026-10-20T16:24:27.7469136Z ##[endgroup]
+2026-10-20T16:24:27.7469795Z ##[group]Disabling automatic garbage collection
+2026-10-20T16:24:27.7473374Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-20T16:24:27.7509715Z ##[endgroup]
+2026-10-20T16:24:27.7510653Z ##[group]Setting up auth
+2026-10-20T16:24:27.7511138Z Removing SSH command configuration
+2026-10-20T16:24:27.7516995Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-20T16:24:27.7558394Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-20T16:24:27.7974984Z Removing HTTP extra header
+2026-10-20T16:24:27.7984214Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-20T16:24:27.8029060Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-20T16:24:27.8294806Z Removing includeIf entries pointing to credentials config files
+2026-10-20T16:24:27.8310183Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-20T16:24:27.8352173Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-20T16:24:27.8617262Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-0ffab712-dcdb-4aff-a0ca-4b073166893c.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-20T16:24:27.8661558Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/mesh-exec/mesh-exec/.git.path /home/runner/work/_temp/git-credentials-0ffab712-dcdb-4aff-a0ca-4b073166893c.config
+2026-10-20T16:24:27.8700686Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/mesh-exec/mesh-exec/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-0ffab712-dcdb-4aff-a0ca-4b073166893c.config
+2026-10-20T16:24:27.8742190Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-0ffab712-dcdb-4aff-a0ca-4b073166893c.config
+2026-10-20T16:24:27.8784507Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-0ffab712-dcdb-4aff-a0ca-4b073166893c.config
+2026-10-20T16:24:27.8822279Z ##[endgroup]
+2026-10-20T16:24:27.8822943Z ##[group]Fetching the repository
+2026-10-20T16:24:27.8829812Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +2b11c90e25d446e354b678e8734e23c97b9ac7f6:refs/remotes/pull/1/merge
+2026-10-20T16:24:28.2888009Z From https://github.com/bpstr/mesh-exec
+2026-10-20T16:24:28.2888966Z  * [new ref]         2b11c90e25d446e354b678e8734e23c97b9ac7f6 -> pull/1/merge
+2026-10-20T16:24:28.2896861Z ##[endgroup]
+2026-10-20T16:24:28.2897502Z ##[group]Determining the checkout info
+2026-10-20T16:24:28.2898613Z ##[endgroup]
+2026-10-20T16:24:28.2905403Z [command]/usr/bin/git sparse-checkout disable
+2026-10-20T16:24:28.2970311Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-20T16:24:28.3012386Z ##[group]Checking out the ref
+2026-10-20T16:24:28.3017889Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/1/merge
+2026-10-20T16:24:28.3120370Z Note: switching to 'refs/remotes/pull/1/merge'.
+2026-10-20T16:24:28.3121309Z 
+2026-10-20T16:24:28.3121945Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-10-20T16:24:28.3123121Z changes and commit them, and you can discard any commits you make in this
+2026-10-20T16:24:28.3124034Z state without impacting any branches by switching back to a branch.
+2026-10-20T16:24:28.3124548Z 
+2026-10-20T16:24:28.3124890Z If you want to create a new branch to retain commits you create, you may
+2026-10-20T16:24:28.3125681Z do so (now or later) by using -c with the switch command. Example:
+2026-10-20T16:24:28.3126553Z 
+2026-10-20T16:24:28.3126746Z   git switch -c <new-branch-name>
+2026-10-20T16:24:28.3127058Z 
+2026-10-20T16:24:28.3127231Z Or undo this operation with:
+2026-10-20T16:24:28.3127512Z 
+2026-10-20T16:24:28.3127661Z   git switch -
+2026-10-20T16:24:28.3127893Z 
+2026-10-20T16:24:28.3128262Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-10-20T16:24:28.3128821Z 
+2026-10-20T16:24:28.3129480Z HEAD is now at 2b11c90 Merge e6f7aa588410534c3691032ae0e295b5b3494045 into 0853bb0aa2e072b1be3c4c26f2a7fa6d508d333b
+2026-10-20T16:24:28.3137500Z ##[endgroup]
+2026-10-20T16:24:28.3190267Z [command]/usr/bin/git log -1 --format=%H
+2026-10-20T16:24:28.3227551Z 2b11c90e25d446e354b678e8734e23c97b9ac7f6
+2026-10-20T16:24:28.3239886Z ##[group]Removing auth
+2026-10-20T16:24:28.3240385Z Removing SSH command configuration
+2026-10-20T16:24:28.3245978Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-20T16:24:28.3291171Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-20T16:24:28.3577006Z Removing HTTP extra header
+2026-10-20T16:24:28.3582503Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-20T16:24:28.3639144Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-20T16:24:28.3922733Z Removing includeIf entries pointing to credentials config files
+2026-10-20T16:24:28.3928154Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-20T16:24:28.3963913Z includeif.gitdir:/home/runner/work/mesh-exec/mesh-exec/.git.path
+2026-10-20T16:24:28.3964847Z includeif.gitdir:/home/runner/work/mesh-exec/mesh-exec/.git/worktrees/*.path
+2026-10-20T16:24:28.3965510Z includeif.gitdir:/github/workspace/.git.path
+2026-10-20T16:24:28.3966986Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-20T16:24:28.3975538Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/mesh-exec/mesh-exec/.git.path
+2026-10-20T16:24:28.4010124Z /home/runner/work/_temp/git-credentials-0ffab712-dcdb-4aff-a0ca-4b073166893c.config
+2026-10-20T16:24:28.4022715Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/mesh-exec/mesh-exec/.git.path \/home\/runner\/work\/_temp\/git\-credentials\-0ffab712\-dcdb\-4aff\-a0ca\-4b073166893c\.config
+2026-10-20T16:24:28.4071602Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/mesh-exec/mesh-exec/.git/worktrees/*.path
+2026-10-20T16:24:28.4106118Z /home/runner/work/_temp/git-credentials-0ffab712-dcdb-4aff-a0ca-4b073166893c.config
+2026-10-20T16:24:28.4119051Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/mesh-exec/mesh-exec/.git/worktrees/*.path \/home\/runner\/work\/_temp\/git\-credentials\-0ffab712\-dcdb\-4aff\-a0ca\-4b073166893c\.config
+2026-10-20T16:24:28.4173310Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-20T16:24:28.4215120Z /github/runner_temp/git-credentials-0ffab712-dcdb-4aff-a0ca-4b073166893c.config
+2026-10-20T16:24:28.4225633Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path \/github\/runner_temp\/git\-credentials\-0ffab712\-dcdb\-4aff\-a0ca\-4b073166893c\.config
+2026-10-20T16:24:28.4274019Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-20T16:24:28.4310147Z /github/runner_temp/git-credentials-0ffab712-dcdb-4aff-a0ca-4b073166893c.config
+2026-10-20T16:24:28.4322221Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path \/github\/runner_temp\/git\-credentials\-0ffab712\-dcdb\-4aff\-a0ca\-4b073166893c\.config
+2026-10-20T16:24:28.4370242Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-20T16:24:28.4645551Z Removing credentials config '/home/runner/work/_temp/git-credentials-0ffab712-dcdb-4aff-a0ca-4b073166893c.config'
+2026-10-20T16:24:28.4654323Z ##[endgroup]
+2026-10-20T16:24:28.4892836Z ##[group]Run actions/setup-node@v7
+2026-10-20T16:24:28.4893112Z with:
+2026-10-20T16:24:28.4893300Z   node-version: 24
+2026-10-20T16:24:28.4893496Z   cache: npm
+2026-10-20T16:24:28.4893685Z   check-latest: false
+2026-10-20T16:24:28.4896618Z   token: ***
+2026-10-20T16:24:28.4896840Z   package-manager-cache: true
+2026-10-20T16:24:28.4897077Z env:
+2026-10-20T16:24:28.4897480Z   TEST_DATABASE_URL: ***127.0.0.1:5432/mesh_test
+2026-10-20T16:24:28.4897770Z   MESH_REQUIRE_SANDBOX: 1
+2026-10-20T16:24:28.4897984Z ##[endgroup]
+2026-10-20T16:24:28.6259179Z Found in cache @ /opt/hostedtoolcache/node/24.21.0/x64
+2026-10-20T16:24:28.7045151Z ##[group]Environment details
+2026-10-20T16:24:29.0727087Z node: v24.21.0
+2026-10-20T16:24:29.0727522Z npm: 11.19.0
+2026-10-20T16:24:29.0727852Z yarn: 1.22.22
+2026-10-20T16:24:29.0729185Z ##[endgroup]
+2026-10-20T16:24:29.0752741Z [command]/opt/hostedtoolcache/node/24.21.0/x64/bin/npm config get cache
+2026-10-20T16:24:29.1877391Z /home/runner/.npm
+2026-10-20T16:24:29.3568467Z Cache hit for: node-cache-Linux-x64-npm-10be074e7f31b7c3b5dba6b592eb194f9b0a9dcf28b352eea8f408d2afdc7430
+2026-10-20T16:24:30.2223032Z Received 24489834 of 24489834 (100.0%), 33.0 MBs/sec
+2026-10-20T16:24:30.2223814Z Cache Size: ~23 MB (24489834 B)
+2026-10-20T16:24:30.2252563Z [command]/usr/bin/tar -xf /home/runner/work/_temp/57367969-ba0b-4434-80d5-7e4138ed19fa/cache.tzst -P -C /home/runner/work/mesh-exec/mesh-exec --use-compress-program unzstd
+2026-10-20T16:24:30.2968917Z Cache restored successfully
+2026-10-20T16:24:30.3029156Z Cache restored from key: node-cache-Linux-x64-npm-10be074e7f31b7c3b5dba6b592eb194f9b0a9dcf28b352eea8f408d2afdc7430
+2026-10-20T16:24:30.3193610Z ##[group]Run sudo apt-get update
+2026-10-20T16:24:30.3193970Z [36;1msudo apt-get update[0m
+2026-10-20T16:24:30.3194362Z [36;1msudo apt-get install --yes --no-install-recommends bubblewrap[0m
+2026-10-20T16:24:30.3291465Z shell: /usr/bin/bash -e {0}
+2026-10-20T16:24:30.3291770Z env:
+2026-10-20T16:24:30.3292323Z   TEST_DATABASE_URL: ***127.0.0.1:5432/mesh_test
+2026-10-20T16:24:30.3292698Z   MESH_REQUIRE_SANDBOX: 1
+2026-10-20T16:24:30.3292966Z ##[endgroup]
+2026-10-20T16:24:30.4476083Z Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
+2026-10-20T16:24:30.4791397Z Get:6 https://packages.microsoft.com/ubuntu/22.04/prod jammy InRelease [3632 B]
+2026-10-20T16:24:30.5570129Z Get:7 https://packages.microsoft.com/ubuntu/22.04/prod jammy/main amd64 Packages [906 kB]
+2026-10-20T16:24:30.5808798Z Get:8 https://packages.microsoft.com/ubuntu/22.04/prod jammy/main arm64 Packages [648 kB]
+2026-10-20T16:24:30.5914370Z Get:9 https://packages.microsoft.com/ubuntu/22.04/prod jammy/main armhf Packages [23.5 kB]
+2026-10-20T16:24:35.4741044Z Hit:2 http://azure.archive.ubuntu.com/ubuntu jammy InRelease
+2026-10-20T16:24:35.4747895Z Get:3 http://azure.archive.ubuntu.com/ubuntu jammy-updates InRelease [128 kB]
+2026-10-20T16:24:35.4770481Z Get:4 http://azure.archive.ubuntu.com/ubuntu jammy-backports InRelease [127 kB]
+2026-10-20T16:24:35.4790649Z Get:5 http://azure.archive.ubuntu.com/ubuntu jammy-security InRelease [129 kB]
+2026-10-20T16:24:35.6509437Z Get:10 http://azure.archive.ubuntu.com/ubuntu jammy-updates/main amd64 Packages [3907 kB]
+2026-10-20T16:24:35.6707672Z Get:11 http://azure.archive.ubuntu.com/ubuntu jammy-updates/main Translation-en [576 kB]
+2026-10-20T16:24:35.6739723Z Get:12 http://azure.archive.ubuntu.com/ubuntu jammy-updates/universe amd64 Packages [1288 kB]
+2026-10-20T16:24:35.6813264Z Get:13 http://azure.archive.ubuntu.com/ubuntu jammy-updates/universe Translation-en [326 kB]
+2026-10-20T16:24:35.8251828Z Get:14 http://azure.archive.ubuntu.com/ubuntu jammy-security/main amd64 Packages [3643 kB]
+2026-10-20T16:24:35.8432650Z Get:15 http://azure.archive.ubuntu.com/ubuntu jammy-security/main Translation-en [510 kB]
+2026-10-20T16:24:35.8460449Z Get:16 http://azure.archive.ubuntu.com/ubuntu jammy-security/universe amd64 Packages [1055 kB]
+2026-10-20T16:24:35.8522004Z Get:17 http://azure.archive.ubuntu.com/ubuntu jammy-security/universe Translation-en [237 kB]
+2026-10-20T16:24:39.9627210Z Fetched 13.5 MB in 6s (2092 kB/s)
+2026-10-20T16:24:41.3500911Z Reading package lists...
+2026-10-20T16:24:41.4239876Z Reading package lists...
+2026-10-20T16:24:41.6881774Z Building dependency tree...
+2026-10-20T16:24:41.6893780Z Reading state information...
+2026-10-20T16:24:41.8653990Z The following NEW packages will be installed:
+2026-10-20T16:24:41.8659421Z   bubblewrap
+2026-10-20T16:24:41.8834531Z 0 upgraded, 1 newly installed, 0 to remove and 73 not upgraded.
+2026-10-20T16:24:41.8835112Z Need to get 46.3 kB of archives.
+2026-10-20T16:24:41.8835954Z After this operation, 132 kB of additional disk space will be used.
+2026-10-20T16:24:41.8836932Z Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
+2026-10-20T16:24:41.9292025Z Get:2 http://azure.archive.ubuntu.com/ubuntu jammy-updates/main amd64 bubblewrap amd64 0.6.1-1ubuntu0.3 [46.3 kB]
+2026-10-20T16:24:42.2521767Z Fetched 46.3 kB in 0s (777 kB/s)
+2026-10-20T16:24:42.2826780Z Selecting previously unselected package bubblewrap.
+2026-10-20T16:24:42.3188022Z (Reading database ... 
+2026-10-20T16:24:42.3188621Z (Reading database ... 5%
+2026-10-20T16:24:42.3189168Z (Reading database ... 10%
+2026-10-20T16:24:42.3217669Z (Reading database ... 15%
+2026-10-20T16:24:42.3218228Z (Reading database ... 20%
+2026-10-20T16:24:42.3218540Z (Reading database ... 25%
+2026-10-20T16:24:42.3218830Z (Reading database ... 30%
+2026-10-20T16:24:42.3219249Z (Reading database ... 35%
+2026-10-20T16:24:42.3219706Z (Reading database ... 40%
+2026-10-20T16:24:42.3220146Z (Reading database ... 45%
+2026-10-20T16:24:42.3220525Z (Reading database ... 50%
+2026-10-20T16:24:42.3535100Z (Reading database ... 55%
+2026-10-20T16:24:42.5519020Z (Reading database ... 60%
+2026-10-20T16:24:42.7986941Z (Reading database ... 65%
+2026-10-20T16:24:43.0540549Z (Reading database ... 70%
+2026-10-20T16:24:43.1879138Z (Reading database ... 75%
+2026-10-20T16:24:43.2966472Z (Reading database ... 80%
+2026-10-20T16:24:43.4658770Z (Reading database ... 85%
+2026-10-20T16:24:43.6918637Z (Reading database ... 90%
+2026-10-20T16:24:43.8428849Z (Reading database ... 95%
+2026-10-20T16:24:43.8429550Z (Reading database ... 100%
+2026-10-20T16:24:43.8430631Z (Reading database ... 261642 files and directories currently installed.)
+2026-10-20T16:24:43.8482247Z Preparing to unpack .../bubblewrap_0.6.1-1ubuntu0.3_amd64.deb ...
+2026-10-20T16:24:43.8510029Z Unpacking bubblewrap (0.6.1-1ubuntu0.3) ...
+2026-10-20T16:24:43.9046734Z Setting up bubblewrap (0.6.1-1ubuntu0.3) ...
+2026-10-20T16:24:43.9096623Z Processing triggers for man-db (2.10.2-1) ...
+2026-10-20T16:24:43.9118218Z Not building database; man-db/auto-update is not 'true'.
+2026-10-20T16:24:44.5532170Z 
+2026-10-20T16:24:44.5532723Z Running kernel seems to be up-to-date.
+2026-10-20T16:24:44.5533249Z 
+2026-10-20T16:24:44.5533602Z No services need to be restarted.
+2026-10-20T16:24:44.5533908Z 
+2026-10-20T16:24:44.5534122Z No containers need to be restarted.
+2026-10-20T16:24:44.5534393Z 
+2026-10-20T16:24:44.5534658Z No user sessions are running outdated binaries.
+2026-10-20T16:24:44.5534962Z 
+2026-10-20T16:24:44.5535376Z No VM guests are running outdated hypervisor (qemu) binaries on this host.
+2026-10-20T16:24:45.8570832Z ##[group]Run npm ci
+2026-10-20T16:24:45.8571140Z [36;1mnpm ci[0m
+2026-10-20T16:24:45.8642949Z shell: /usr/bin/bash -e {0}
+2026-10-20T16:24:45.8643258Z env:
+2026-10-20T16:24:45.8643819Z   TEST_DATABASE_URL: ***127.0.0.1:5432/mesh_test
+2026-10-20T16:24:45.8644217Z   MESH_REQUIRE_SANDBOX: 1
+2026-10-20T16:24:45.8644515Z ##[endgroup]
+2026-10-20T16:24:48.1003766Z 
+2026-10-20T16:24:48.1004556Z added 128 packages, and audited 129 packages in 2s
+2026-10-20T16:24:48.1005153Z 
+2026-10-20T16:24:48.1005515Z 35 packages are looking for funding
+2026-10-20T16:24:48.1009372Z   run `npm fund` for details
+2026-10-20T16:24:48.1018882Z 
+2026-10-20T16:24:48.1019135Z found 0 vulnerabilities
+2026-10-20T16:24:48.1029053Z npm warn install-scripts 1 package has install scripts not yet covered by allowScripts:
+2026-10-20T16:24:48.1029947Z npm warn install-scripts   esbuild@0.28.2 (postinstall: node install.js)
+2026-10-20T16:24:48.1030489Z npm warn install-scripts
+2026-10-20T16:24:48.1537896Z npm warn install-scripts Run `npm install-scripts ls` to review, or `npm install-scripts approve <pkg>` to allow.
+2026-10-20T16:24:48.1574963Z ##[group]Run npm run build
+2026-10-20T16:24:48.1575274Z [36;1mnpm run build[0m
+2026-10-20T16:24:48.1648280Z shell: /usr/bin/bash -e {0}
+2026-10-20T16:24:48.1648596Z env:
+2026-10-20T16:24:48.1649279Z   TEST_DATABASE_URL: ***127.0.0.1:5432/mesh_test
+2026-10-20T16:24:48.1649643Z   MESH_REQUIRE_SANDBOX: 1
+2026-10-20T16:24:48.1649896Z ##[endgroup]
+2026-10-20T16:24:48.2756759Z 
+2026-10-20T16:24:48.2757613Z > mesh-exec@0.1.0 build
+2026-10-20T16:24:48.2758126Z > tsc -p tsconfig.json
+2026-10-20T16:24:48.2758430Z 
+2026-10-20T16:24:50.8754055Z ##[group]Run npm test
+2026-10-20T16:24:50.8754348Z [36;1mnpm test[0m
+2026-10-20T16:24:50.8825997Z shell: /usr/bin/bash -e {0}
+2026-10-20T16:24:50.8826342Z env:
+2026-10-20T16:24:50.8826937Z   TEST_DATABASE_URL: ***127.0.0.1:5432/mesh_test
+2026-10-20T16:24:50.8827338Z   MESH_REQUIRE_SANDBOX: 1
+2026-10-20T16:24:50.8827640Z ##[endgroup]
+2026-10-20T16:24:51.0103161Z 
+2026-10-20T16:24:51.0103476Z > mesh-exec@0.1.0 test
+2026-10-20T16:24:51.0104203Z > node --import tsx --test --test-concurrency=1 test/*.test.ts
+2026-10-20T16:24:51.0104648Z 
+2026-10-20T16:24:51.8352594Z ✔ independent A2A SDK client, durable replies, participant scope, and complete message trace (247.894958ms)
+2026-10-20T16:24:51.9239428Z ✔ outbox retries survive a lost response and retired sender without duplicate tasks (89.455965ms)
+2026-10-20T16:24:52.0508311Z ✔ concurrent duplicate sends produce one task, and an ingress trace failure rolls back acceptance (126.130558ms)
+2026-10-20T16:24:52.4336628Z ✔ default SendMessage waits, list pagination is scoped, and unsupported streaming is explicit (383.796513ms)
+2026-10-20T16:24:52.6440006Z ✔ fresh Codex invocation isolates config, preserves auth, and uses one initial prompt (11.686364ms)
+2026-10-20T16:24:52.6449821Z ✔ streaming redaction handles every split position, Unicode, escaped and overlapping secrets (2.911181ms)
+2026-10-20T16:24:52.6452121Z ✔ worker environment excludes daemon credentials and schema parsing rejects malformed handoffs (1.285549ms)
+2026-10-20T16:24:52.7571953Z ✔ CLI qualification checks installed help before any model run and rejects missing flags (112.689893ms)
+2026-10-20T16:24:54.1833157Z ✔ independent MCP peers consult over A2A, publish in one checkout, and complete with a traced final barrier (689.516378ms)
+2026-10-20T16:24:54.4911795Z ✔ completion refuses stale coverage, unhandled replies, and a changing validation source (307.848723ms)
+2026-10-20T16:24:54.6974591Z ✔ hook notices contain bounded identifiers only and preserve event kind (1.769263ms)
+2026-10-20T16:24:54.6981070Z ✔ mailbox hook authenticates a bounded GET and never acknowledges or consumes messages (27.745591ms)
+2026-10-20T16:24:54.6986727Z ✔ hook failure emits a fixed fallback without reflecting input or secrets (4.394123ms)
+2026-10-20T16:24:55.1101235Z ✔ N peers use fresh generations, enforce population/run limits and retain redacted complete output (221.182884ms)
+2026-10-20T16:24:55.2321487Z ✔ output capture is attached before asynchronous PID persistence for a short noisy worker (122.012747ms)
+2026-10-20T16:24:55.3273958Z ✔ idle peers park at the mesh_yield cursor and see work arriving during exit (95.204608ms)
+2026-10-20T16:24:55.5214009Z ✔ completion closing pauses admission while heartbeats continue, then resumes on rejection (193.880893ms)
+2026-10-20T16:24:55.6337252Z ✔ run timeout stops and reaps the process before releasing the generation (112.089456ms)
+2026-10-20T16:24:55.8877128Z ✔ closing preserves already-running peers and waits for mission acceptance without replacement (253.37911ms)
+2026-10-20T16:24:56.1924549Z ✔ parked populations honor the hard elapsed limit without repeated idle runs (305.249081ms)
+2026-10-20T16:24:56.2970661Z ✔ a slot already parked exits when another slot exhausts the shared run budget (104.302902ms)
+2026-10-20T16:24:56.3894061Z ✔ unconfirmed termination quarantines the generation without a replacement or close-wait deadlock (92.20903ms)
+2026-10-20T16:24:56.4363400Z ✔ unexpected configured MCP use fails closed with evidence and no replacement (46.684293ms)
+2026-10-20T16:24:56.4838358Z ✔ trace-store failures cannot be misclassified as malformed CLI JSON (47.880186ms)
+2026-10-20T16:24:56.7007869Z ✖ OS sandbox isolates private audit files while permitting worker output and guarded source commands (58.537934ms)
+2026-10-20T16:24:57.2202747Z ✔ yield preserves work that arrived after the last observation without self-waking on claim release (168.849267ms)
+2026-10-20T16:24:57.3171950Z ✔ atomic overlapping claim bundles have one winner; stale generations cannot write (96.788722ms)
+2026-10-20T16:24:57.4088061Z ✔ knowledge revisions invalidate transitive dependants and preserve history (91.331322ms)
+2026-10-20T16:24:57.4837803Z ✔ trace replay is committed, correlated, complete, and secret-redacted; heartbeats do not wake slots (75.833586ms)
+2026-10-20T16:24:57.9343756Z ✔ competing writes, stale dependencies, idempotency, and symlink escapes are rejected without losing content (95.935145ms)
+2026-10-20T16:24:57.9893564Z ✔ the operating-system flock excludes another daemon, and releasing it permits restart (55.628529ms)
+2026-10-20T16:24:58.0313711Z ✔ a failed prepared-record transaction never publishes a file (41.775186ms)
+2026-10-20T16:24:58.0882638Z ✔ restart reconciles a partial journal and refuses an unexpected external edit (56.949859ms)
+2026-10-20T16:24:58.2171516Z ✔ command retries run once and full output survives bounded, redacted previews (128.857069ms)
+2026-10-20T16:24:58.4885515Z ✔ source mutators block coherent reads and final verification retains the gate through acceptance (271.208368ms)
+2026-10-20T16:24:58.5575373Z ✔ cancellation terminates the managed process group and revoked runs cannot publish (68.700887ms)
+2026-10-20T16:24:58.8097572Z ✔ a final barrier drains full command capacity without deadlocking queued source mutations (252.018851ms)
+2026-10-20T16:24:58.8847447Z ✔ an admission delayed by sandbox qualification cannot cross a final barrier (72.228262ms)
+2026-10-20T16:24:58.9938374Z ✔ real OS sandbox forbids source writes and does not silently fall back (110.145147ms)
+2026-10-20T16:24:59.0118289Z ℹ tests 39
+2026-10-20T16:24:59.0118798Z ℹ suites 0
+2026-10-20T16:24:59.0119165Z ℹ pass 38
+2026-10-20T16:24:59.0119567Z ℹ fail 1
+2026-10-20T16:24:59.0119941Z ℹ cancelled 0
+2026-10-20T16:24:59.0120379Z ℹ skipped 0
+2026-10-20T16:24:59.0121156Z ℹ todo 0
+2026-10-20T16:24:59.0121594Z ℹ duration_ms 7965.640148
+2026-10-20T16:24:59.0141770Z 
+2026-10-20T16:24:59.0142085Z ✖ failing tests:
+2026-10-20T16:24:59.0142321Z 
+2026-10-20T16:24:59.0142655Z test at test/sandbox.test.ts:1:372
+2026-10-20T16:24:59.0144001Z ✖ OS sandbox isolates private audit files while permitting worker output and guarded source commands (58.537934ms)
+2026-10-20T16:24:59.0149526Z   Error: Command failed: bwrap --die-with-parent --unshare-pid --ro-bind / / --proc /proc --dev /dev --tmpfs /tmp --unshare-net --tmpfs /tmp/mesh-sandbox-Gt3mUR/private --bind /tmp/mesh-sandbox-Gt3mUR/repo /tmp/mesh-sandbox-Gt3mUR/repo --ro-bind /tmp/mesh-sandbox-Gt3mUR/repo/.git /tmp/mesh-sandbox-Gt3mUR/repo/.git --bind /tmp/mesh-sandbox-Gt3mUR/private/worker /tmp/mesh-sandbox-Gt3mUR/private/worker --chdir /tmp/mesh-sandbox-Gt3mUR/repo -- /opt/hostedtoolcache/node/24.21.0/x64/bin/node -e 
+2026-10-20T16:24:59.0153301Z         const fs = require('node:fs'), assert = require('node:assert/strict');
+2026-10-20T16:24:59.0154399Z         fs.writeFileSync("/tmp/mesh-sandbox-Gt3mUR/private/worker/result.json", 'handoff');
+2026-10-20T16:24:59.0155573Z         assert.throws(() => fs.readFileSync("/tmp/mesh-sandbox-Gt3mUR/private/audit.log"));
+2026-10-20T16:24:59.0156916Z         assert.throws(() => fs.writeFileSync("/tmp/mesh-sandbox-Gt3mUR/private/audit.log", 'bad'));
+2026-10-20T16:24:59.0157896Z         assert.throws(() => fs.writeFileSync('.git/config', 'bad'));
+2026-10-20T16:24:59.0158614Z         fs.writeFileSync('output.txt', 'authorized');
+2026-10-20T16:24:59.0159111Z       
+2026-10-20T16:24:59.0159420Z   node:assert:152
+2026-10-20T16:24:59.0159871Z     throw new AssertionError(obj);
+2026-10-20T16:24:59.0160290Z     ^
+2026-10-20T16:24:59.0160576Z   
+2026-10-20T16:24:59.0161087Z   AssertionError [ERR_ASSERTION]: Missing expected exception.
+2026-10-20T16:24:59.0161694Z       at [eval]:5:14
+2026-10-20T16:24:59.0162221Z       at runScriptInThisContext (node:internal/vm:219:10)
+2026-10-20T16:24:59.0162877Z       at node:internal/process/execution:451:12
+2026-10-20T16:24:59.0163406Z       at [eval]-wrapper:6:24
+2026-10-20T16:24:59.0164051Z       at runScriptInContext (node:internal/process/execution:449:60)
+2026-10-20T16:24:59.0165107Z       at evalFunction (node:internal/process/execution:283:30)
+2026-10-20T16:24:59.0166183Z       at evalTypeScript (node:internal/process/execution:295:3)
+2026-10-20T16:24:59.0166857Z       at node:internal/main/eval_string:71:3 {
+2026-10-20T16:24:59.0167367Z     generatedMessage: false,
+2026-10-20T16:24:59.0167789Z     code: 'ERR_ASSERTION',
+2026-10-20T16:24:59.0168179Z     actual: undefined,
+2026-10-20T16:24:59.0168553Z     expected: undefined,
+2026-10-20T16:24:59.0168944Z     operator: 'throws',
+2026-10-20T16:24:59.0169309Z     diff: 'simple'
+2026-10-20T16:24:59.0169632Z   }
+2026-10-20T16:24:59.0169907Z   
+2026-10-20T16:24:59.0170200Z   Node.js v24.21.0
+2026-10-20T16:24:59.0170520Z   
+2026-10-20T16:24:59.0170961Z       at genericNodeError (node:internal/errors:986:15)
+2026-10-20T16:24:59.0171612Z       at wrappedFn (node:internal/errors:540:14)
+2026-10-20T16:24:59.0172293Z       at ChildProcess.exithandler (node:child_process:417:12)
+2026-10-20T16:24:59.0172961Z       at ChildProcess.emit (node:events:514:28)
+2026-10-20T16:24:59.0173613Z       at maybeClose (node:internal/child_process:1141:16)
+2026-10-20T16:24:59.0174347Z       at Socket.<anonymous> (node:internal/child_process:498:11)
+2026-10-20T16:24:59.0175008Z       at Socket.emit (node:events:514:28)
+2026-10-20T16:24:59.0175570Z       at Pipe.<anonymous> (node:net:362:12) {
+2026-10-20T16:24:59.0176267Z     code: 1,
+2026-10-20T16:24:59.0176594Z     killed: false,
+2026-10-20T16:24:59.0176943Z     signal: null,
+2026-10-20T16:24:59.0183726Z     cmd: `bwrap --die-with-parent --unshare-pid --ro-bind / / --proc /proc --dev /dev --tmpfs /tmp --unshare-net --tmpfs /tmp/mesh-sandbox-Gt3mUR/private --bind /tmp/mesh-sandbox-Gt3mUR/repo /tmp/mesh-sandbox-Gt3mUR/repo --ro-bind /tmp/mesh-sandbox-Gt3mUR/repo/.git /tmp/mesh-sandbox-Gt3mUR/repo/.git --bind /tmp/mesh-sandbox-Gt3mUR/private/worker /tmp/mesh-sandbox-Gt3mUR/private/worker --chdir /tmp/mesh-sandbox-Gt3mUR/repo -- /opt/hostedtoolcache/node/24.21.0/x64/bin/node -e \n      const fs = require('node:fs'), assert = require('node:assert/strict');\n      fs.writeFileSync("/tmp/mesh-sandbox-Gt3mUR/private/worker/result.json", 'handoff');\n      assert.throws(() => fs.readFileSync("/tmp/mesh-sandbox-Gt3mUR/private/audit.log"));\n      assert.throws(() => fs.writeFileSync("/tmp/mesh-sandbox-Gt3mUR/private/audit.log", 'bad'));\n      assert.throws(() => fs.writeFileSync('.git/config', 'bad'));\n      fs.writeFileSync('output.txt', 'authorized');\n    `,
+2026-10-20T16:24:59.0190046Z     stdout: '',
+2026-10-20T16:24:59.0194771Z     stderr: "node:assert:152\n  throw new AssertionError(obj);\n  ^\n\nAssertionError [ERR_ASSERTION]: Missing expected exception.\n    at [eval]:5:14\n    at runScriptInThisContext (node:internal/vm:219:10)\n    at node:internal/process/execution:451:12\n    at [eval]-wrapper:6:24\n    at runScriptInContext (node:internal/process/execution:449:60)\n    at evalFunction (node:internal/process/execution:283:30)\n    at evalTypeScript (node:internal/process/execution:295:3)\n    at node:internal/main/eval_string:71:3 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: undefined,\n  expected: undefined,\n  operator: 'throws',\n  diff: 'simple'\n}\n\nNode.js v24.21.0\n"
+2026-10-20T16:24:59.0199032Z   }
+2026-10-20T16:24:59.0306925Z ##[error]Process completed with exit code 1.
+2026-10-20T16:24:59.0479712Z Post job cleanup.
+2026-10-20T16:24:59.1426512Z [command]/usr/bin/git version
+2026-10-20T16:24:59.1485112Z git version 2.55.0
+2026-10-20T16:24:59.1530685Z Temporarily overriding HOME='/home/runner/work/_temp/d5560b66-f04b-451e-b144-90598f551d2c' before making global git config changes
+2026-10-20T16:24:59.1534881Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-20T16:24:59.1541093Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/mesh-exec/mesh-exec
+2026-10-20T16:24:59.1623663Z Removing SSH command configuration
+2026-10-20T16:24:59.1637095Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-20T16:24:59.1640044Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-20T16:24:59.2006854Z Removing HTTP extra header
+2026-10-20T16:24:59.2008365Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-20T16:24:59.2058235Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-20T16:24:59.2444057Z Removing includeIf entries pointing to credentials config files
+2026-10-20T16:24:59.2452731Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-20T16:24:59.2499736Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-20T16:24:59.3025646Z Print service container logs: d7798223c2c84c668858216213d95b88_postgres17bookworm_7a1bc0
+2026-10-20T16:24:59.3030890Z ##[command]/usr/bin/docker logs --details bef35a5161c2a04c745ee67049126a491f08d8bb0ba0b750a0da0642a51f908a
+2026-10-20T16:24:59.3195958Z  The files belonging to this database system will be owned by user "postgres".
+2026-10-20T16:24:59.3197929Z  initdb: warning: enabling "trust" authentication for local connections
+2026-10-20T16:24:59.3198641Z  This user must also own the server process.
+2026-10-20T16:24:59.3199656Z  
+2026-10-20T16:24:59.3200300Z  The database cluster will be initialized with locale "en_US.utf8".
+2026-10-20T16:24:59.3201251Z  The default database encoding has accordingly been set to "UTF8".
+2026-10-20T16:24:59.3202164Z  The default text search configuration will be set to "english".
+2026-10-20T16:24:59.3203202Z  
+2026-10-20T16:24:59.3203713Z  Data page checksums are disabled.
+2026-10-20T16:24:59.3204288Z  
+2026-10-20T16:24:59.3205000Z  fixing permissions on existing directory /var/lib/postgresql/data ... ok
+2026-10-20T16:24:59.3206153Z  creating subdirectories ... ok
+2026-10-20T16:24:59.3207291Z  initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+2026-10-20T16:24:59.3209401Z  2026-10-20 16:24:22.256 UTC [1] LOG:  starting PostgreSQL 17.11 (Debian 17.11-1.pgdg12+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit
+2026-10-20T16:24:59.3210688Z  selecting dynamic shared memory implementation ... posix
+2026-10-20T16:24:59.3211659Z  2026-10-20 16:24:22.256 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+2026-10-20T16:24:59.3212368Z  selecting default "max_connections" ... 100
+2026-10-20T16:24:59.3213928Z  2026-10-20 16:24:22.256 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+2026-10-20T16:24:59.3214611Z  selecting default "shared_buffers" ... 128MB
+2026-10-20T16:24:59.3216258Z  2026-10-20 16:24:22.257 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-10-20T16:24:59.3217039Z  selecting default time zone ... Etc/UTC
+2026-10-20T16:24:59.3217989Z  2026-10-20 16:24:22.260 UTC [64] LOG:  database system was shut down at 2026-10-20 16:24:22 UTC
+2026-10-20T16:24:59.3218717Z  creating configuration files ... ok
+2026-10-20T16:24:59.3219574Z  2026-10-20 16:24:22.265 UTC [1] LOG:  database system is ready to accept connections
+2026-10-20T16:24:59.3220253Z  running bootstrap script ... ok
+2026-10-20T16:24:59.3221301Z  performing post-bootstrap initialization ... ok
+2026-10-20T16:24:59.3222019Z  syncing data to disk ... ok
+2026-10-20T16:24:59.3222594Z  
+2026-10-20T16:24:59.3223054Z  
+2026-10-20T16:24:59.3223618Z  Success. You can now start the database server using:
+2026-10-20T16:24:59.3224324Z  
+2026-10-20T16:24:59.3224896Z      pg_ctl -D /var/lib/postgresql/data -l logfile start
+2026-10-20T16:24:59.3225596Z  
+2026-10-20T16:24:59.3226926Z  waiting for server to start....2026-10-20 16:24:21.941 UTC [48] LOG:  starting PostgreSQL 17.11 (Debian 17.11-1.pgdg12+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 12.2.0-14+deb12u1) 12.2.0, 64-bit
+2026-10-20T16:24:59.3228110Z  2026-10-20 16:24:21.941 UTC [48] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-10-20T16:24:59.3228854Z  2026-10-20 16:24:21.944 UTC [51] LOG:  database system was shut down at 2026-10-20 16:24:21 UTC
+2026-10-20T16:24:59.3229419Z  2026-10-20 16:24:21.949 UTC [48] LOG:  database system is ready to accept connections
+2026-10-20T16:24:59.3229961Z   done
+2026-10-20T16:24:59.3230158Z  server started
+2026-10-20T16:24:59.3230369Z  CREATE DATABASE
+2026-10-20T16:24:59.3230577Z  
+2026-10-20T16:24:59.3230758Z  
+2026-10-20T16:24:59.3231231Z  /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+2026-10-20T16:24:59.3231670Z  
+2026-10-20T16:24:59.3232155Z  waiting for server to shut down...2026-10-20 16:24:22.129 UTC [48] LOG:  received fast shutdown request
+2026-10-20T16:24:59.3233044Z  .2026-10-20 16:24:22.130 UTC [48] LOG:  aborting any active transactions
+2026-10-20T16:24:59.3233848Z  2026-10-20 16:24:22.132 UTC [48] LOG:  background worker "logical replication launcher" (PID 54) exited with exit code 1
+2026-10-20T16:24:59.3234506Z  2026-10-20 16:24:22.133 UTC [49] LOG:  shutting down
+2026-10-20T16:24:59.3234978Z  2026-10-20 16:24:22.134 UTC [49] LOG:  checkpoint starting: shutdown immediate
+2026-10-20T16:24:59.3236456Z  2026-10-20 16:24:22.151 UTC [49] LOG:  checkpoint complete: wrote 921 buffers (5.6%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.015 s, sync=0.002 s, total=0.018 s; sync files=301, longest=0.001 s, average=0.001 s; distance=4238 kB, estimate=4238 kB; lsn=0/190A9C8, redo lsn=0/190A9C8
+2026-10-20T16:24:59.3237781Z  2026-10-20 16:24:22.158 UTC [48] LOG:  database system is shut down
+2026-10-20T16:24:59.3238505Z   done
+2026-10-20T16:24:59.3238706Z  server stopped
+2026-10-20T16:24:59.3238914Z  
+2026-10-20T16:24:59.3239271Z  PostgreSQL init process complete; ready for start up.
+2026-10-20T16:24:59.3239642Z  
+2026-10-20T16:24:59.3246180Z Stop and remove container: d7798223c2c84c668858216213d95b88_postgres17bookworm_7a1bc0
+2026-10-20T16:24:59.3251550Z ##[command]/usr/bin/docker rm --force bef35a5161c2a04c745ee67049126a491f08d8bb0ba0b750a0da0642a51f908a
+2026-10-20T16:25:00.1817263Z bef35a5161c2a04c745ee67049126a491f08d8bb0ba0b750a0da0642a51f908a
+2026-10-20T16:25:00.1858448Z Remove container network: github_network_c293b4ed88c24903a415f4e37339d430
+2026-10-20T16:25:00.1862890Z ##[command]/usr/bin/docker network rm github_network_c293b4ed88c24903a415f4e37339d430
+2026-10-20T16:25:00.2937103Z github_network_c293b4ed88c24903a415f4e37339d430
+2026-10-20T16:25:00.3013009Z Cleaning up orphan processes

@@ -9,6 +9,9 @@ export function registerSecret(secret: string): void {
   if (secret.length >= 8) secrets.add(secret);
 }
 export function redact(value: unknown, extraSecrets: string[] = []): unknown {
+  // pg returns timestamptz values as Dates; treating them as plain objects
+  // erases the timestamps from status output and exported coordination records.
+  if (value instanceof Date) return value.toJSON();
   if (typeof value === 'string') {
     let text = value;
     for (const secret of [...secrets, ...extraSecrets])

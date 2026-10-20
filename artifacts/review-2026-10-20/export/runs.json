@@ -1,0 +1,62 @@
+[
+  {
+    "id": "2649593e-2f65-4d56-9884-7c7687d3907a",
+    "agent_id": "A1",
+    "generation": 1,
+    "state": "failed",
+    "started_at": {},
+    "ended_at": {},
+    "reason": "failed",
+    "handoff": null,
+    "result": null,
+    "log_dir": "/private/tmp/mesh-exec-pilot-20261020/runtime/runs/04cb49b8-98bd-4f47-b7e7-48b548108472/A1/2649593e-2f65-4d56-9884-7c7687d3907a"
+  },
+  {
+    "id": "fd515ee7-19ea-4b0a-8b33-02a67adf4eb2",
+    "agent_id": "A2",
+    "generation": 1,
+    "state": "failed",
+    "started_at": {},
+    "ended_at": {},
+    "reason": "failed",
+    "handoff": null,
+    "result": null,
+    "log_dir": "/private/tmp/mesh-exec-pilot-20261020/runtime/runs/04cb49b8-98bd-4f47-b7e7-48b548108472/A2/fd515ee7-19ea-4b0a-8b33-02a67adf4eb2"
+  },
+  {
+    "id": "be6a9936-a42a-4fc3-9257-52451f4c6c14",
+    "agent_id": "A3",
+    "generation": 1,
+    "state": "failed",
+    "started_at": {},
+    "ended_at": {},
+    "reason": "failed",
+    "handoff": null,
+    "result": null,
+    "log_dir": "/private/tmp/mesh-exec-pilot-20261020/runtime/runs/04cb49b8-98bd-4f47-b7e7-48b548108472/A3/be6a9936-a42a-4fc3-9257-52451f4c6c14"
+  },
+  {
+    "id": "9ed690d4-0dc5-471d-890b-ad303133d59c",
+    "agent_id": "A4",
+    "generation": 1,
+    "state": "failed",
+    "started_at": {},
+    "ended_at": {},
+    "reason": "failed",
+    "handoff": null,
+    "result": null,
+    "log_dir": "/private/tmp/mesh-exec-pilot-20261020/runtime/runs/04cb49b8-98bd-4f47-b7e7-48b548108472/A4/9ed690d4-0dc5-471d-890b-ad303133d59c"
+  },
+  {
+    "id": "12cd57ec-4db7-40e1-a08f-3a7e0e36a347",
+    "agent_id": "A5",
+    "generation": 1,
+    "state": "failed",
+    "started_at": {},
+    "ended_at": {},
+    "reason": "failed",
+    "handoff": null,
+    "result": null,
+    "log_dir": "/private/tmp/mesh-exec-pilot-20261020/runtime/runs/04cb49b8-98bd-4f47-b7e7-48b548108472/A5/12cd57ec-4db7-40e1-a08f-3a7e0e36a347"
+  }
+]

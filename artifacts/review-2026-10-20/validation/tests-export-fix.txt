@@ -1,0 +1,21 @@
+✔ independent MCP peers consult over A2A, publish in one checkout, and complete with a traced final barrier (1426.420459ms)
+✔ completion refuses stale coverage, unhandled replies, and a changing validation source (672.538167ms)
+✔ N peers use fresh generations, enforce population/run limits and retain redacted complete output (199.564084ms)
+✔ output capture is attached before asynchronous PID persistence for a short noisy worker (135.809625ms)
+✔ idle peers park at the mesh_yield cursor and see work arriving during exit (107.057791ms)
+✔ completion closing pauses admission while heartbeats continue, then resumes on rejection (226.433959ms)
+✔ run timeout stops and reaps the process before releasing the generation (111.706417ms)
+✔ closing preserves already-running peers and waits for mission acceptance without replacement (259.520833ms)
+✔ parked populations honor the hard elapsed limit without repeated idle runs (305.37ms)
+✔ a slot already parked exits when another slot exhausts the shared run budget (126.139542ms)
+✔ unconfirmed termination quarantines the generation without a replacement or close-wait deadlock (87.641041ms)
+✔ unexpected configured MCP use fails closed with evidence and no replacement (43.673083ms)
+✔ trace-store failures cannot be misclassified as malformed CLI JSON (47.010334ms)
+ℹ tests 13
+ℹ suites 0
+ℹ pass 13
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4385.592916

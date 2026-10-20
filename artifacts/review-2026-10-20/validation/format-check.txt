@@ -1,0 +1,6 @@
+
+> mesh-exec@0.1.0 format:check
+> prettier --check src test docs examples README.md package.json tsconfig.json .github compose.yaml
+
+Checking formatting...
+All matched files use Prettier code style!

@@ -269,6 +269,7 @@ export class Workspace {
   private quarantine?: string;
   private readonly commands = new Map<string, RunningCommand>();
   private readonly revokedRuns = new Set<string>();
+  private readonly yieldingRuns = new Set<string>();
   private activePatch?: { runId: string; done: Promise<void> };
 
   private constructor(
@@ -687,7 +688,7 @@ export class Workspace {
     return this.gated(async () => {
       this.assertUsable();
       invariant(
-        !this.revokedRuns.has(principal.runId),
+        !this.runUnavailable(principal.runId),
         'run_revoked',
         'This run can no longer publish changes.',
       );
@@ -774,7 +775,7 @@ export class Workspace {
           { ...input, changes: input.changes.map(({ content: _content, ...change }) => change) },
           journal,
         );
-        if (this.revokedRuns.has(principal.runId)) {
+        if (this.runUnavailable(principal.runId)) {
           await this.setState(principal, input.operationId, 'cancelled');
           return this.operation(principal, input.operationId);
         }
@@ -1031,7 +1032,7 @@ export class Workspace {
   ): Promise<WorkspaceOperation> {
     this.assertUsable();
     invariant(
-      verification || !this.revokedRuns.has(principal.runId),
+      verification || !this.runUnavailable(principal.runId),
       'run_revoked',
       'This run can no longer start commands.',
     );
@@ -1119,7 +1120,7 @@ export class Workspace {
         'Final verification has paused new command admission.',
       );
       invariant(
-        verification || !this.revokedRuns.has(principal.runId),
+        verification || !this.runUnavailable(principal.runId),
         'run_revoked',
         'This run can no longer start commands.',
       );
@@ -1231,7 +1232,7 @@ export class Workspace {
         },
         input.operationId,
       );
-      if (running.cancelled || (!verification && this.revokedRuns.has(running.principal.runId))) {
+      if (running.cancelled || (!verification && this.runUnavailable(running.principal.runId))) {
         await this.setState(running.principal, input.operationId, 'cancelled');
         return;
       }
@@ -1241,7 +1242,7 @@ export class Workspace {
         open(stdoutPath, 'a', 0o600),
         open(stderrPath, 'a', 0o600),
       ]);
-      if (running.cancelled || (!verification && this.revokedRuns.has(running.principal.runId))) {
+      if (running.cancelled || (!verification && this.runUnavailable(running.principal.runId))) {
         await Promise.all([stdoutHandle.close(), stderrHandle.close()]);
         await this.setState(running.principal, input.operationId, 'cancelled');
         return;
@@ -1471,8 +1472,28 @@ export class Workspace {
     return this.operation(principal, operationId);
   }
 
+  private runUnavailable(runId: string): boolean {
+    return this.revokedRuns.has(runId) || this.yieldingRuns.has(runId);
+  }
+
+  async yieldRun<T>(runId: string, releaseClaims: () => Promise<T>): Promise<T> {
+    invariant(!this.runUnavailable(runId), 'run_revoked', 'Run is revoked or already yielding.');
+    this.yieldingRuns.add(runId);
+    try {
+      await this.drainRun(runId);
+      return await releaseClaims();
+    } finally {
+      // A concurrent supervisor cancellation remains in revokedRuns.
+      this.yieldingRuns.delete(runId);
+    }
+  }
+
   async cancelRun(runId: string): Promise<void> {
     this.revokedRuns.add(runId);
+    await this.drainRun(runId);
+  }
+
+  private async drainRun(runId: string): Promise<void> {
     const patch = this.activePatch?.runId === runId ? this.activePatch.done : undefined;
     const commands = [...this.commands.values()].filter(
       (command) => command.principal.runId === runId,

@@ -1,0 +1,14 @@
+{
+  "model": "gpt-6.1-sol",
+  "agents": 5,
+  "maxLaunches": 5,
+  "maxToolCalls": 100,
+  "maxElapsedMs": 300000,
+  "replacements": false,
+  "retries": false,
+  "stop": "completion, first provider error, 100 admitted mesh tool calls, or five-minute cutoff",
+  "authorization": "User requested one Sol 6.1 rerun after general coordination improvements. Retain prior five-launch/five-minute limits, no replacements or retries; add a 100-tool admission ceiling.",
+  "startedAt": "2026-10-20T17:07:25.996Z",
+  "runnerCommit": "2891851072cf877a194fb83505d8a4fbde1a0f2f",
+  "codexVersion": "codex-cli 0.160.0"
+}

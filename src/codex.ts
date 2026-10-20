@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { promisify } from 'node:util';
+import { coordinationInstructions } from './coordination.js';
 
 /** The final message is a handoff, never proof that the mission is complete. */
 export const CODEX_RESULT_SCHEMA = {
@@ -88,14 +89,7 @@ export function buildCodexInvocation(options: CodexInvocationOptions): CodexInvo
     'Implement the mission roadmap in this repository. Consult with the other mesh peers.',
     `Mission: ${options.missionId}. Roadmap: ${JSON.stringify(roadmapPath)}.`,
     `Your slot is ${options.slotId}; this is run ${options.runId}, generation ${options.generation}.`,
-    'Call mesh_join first. Read the original roadmap, applicable repository instructions, the shared board, and your durable inbox.',
-    'Choose your own useful contribution. Consult peers whose work or knowledge affects it, and claim resources before changing them.',
-    'The local checkout is read-only. Authorized changes and command execution use the mesh workspace tools, which enforce shared-workspace ownership.',
-    'Do not start other agent CLIs or subagents. The runner owns the population; all peers share this same mission.',
-    'Use mesh_poll at bootstrap, at work transitions, before dependent changes, and before exit. A notification is not an acknowledgment: handle messages explicitly with mesh_ack.',
-    'Record evidence, decisions, corrections, and a checkpoint through mesh tools before exiting. When useful work is unavailable, yield with its dependency.',
-    'For idle or blocked outcomes, call mesh_yield and copy its returned workRevision into the final work_revision field, so arriving work cannot be lost during replacement.',
-    'Propose completion only through the mesh acceptance process. Your final message is a structured run handoff, not authority to complete the mission.',
+    coordinationInstructions,
   ].join('\n');
 
   const args = [

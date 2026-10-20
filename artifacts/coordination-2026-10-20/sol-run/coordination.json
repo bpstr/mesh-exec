@@ -1,0 +1,287 @@
+{
+  "requirements": [
+    {
+      "mission_id": "660cf934-c468-4497-8545-6abbde987f79",
+      "id": "api",
+      "revision": 1,
+      "anchor": "`slugify.mjs`: export `slugify(value)`.",
+      "title": "Pure Unicode slugify API",
+      "criteria": [
+        "Exports slugify(value), rejects nonstrings with TypeError, normalizes NFKD, removes combining marks, lowercases, hyphenates non-ASCII-alphanumeric runs and trims hyphens; empty/punctuation-only return empty.",
+        "Importing slugify.mjs has no CLI side effects."
+      ],
+      "state": "open",
+      "author_agent": "A1",
+      "evidence": [],
+      "updated_at": "2026-10-20T17:07:59.174Z"
+    },
+    {
+      "mission_id": "660cf934-c468-4497-8545-6abbde987f79",
+      "id": "cli",
+      "revision": 1,
+      "anchor": "`cli.mjs`: import the function; join all command-line arguments with spaces and print one slug followed by a newline.",
+      "title": "Command-line interface",
+      "criteria": [
+        "CLI imports slugify, joins arguments with spaces and emits exactly one slug plus newline.",
+        "No arguments produces short usage on stderr and exit status 1."
+      ],
+      "state": "open",
+      "author_agent": "A1",
+      "evidence": [],
+      "updated_at": "2026-10-20T17:07:59.286Z"
+    },
+    {
+      "mission_id": "660cf934-c468-4497-8545-6abbde987f79",
+      "id": "docs",
+      "revision": 1,
+      "anchor": "`README.md`: describe the API, examples, CLI, and `npm test`.",
+      "title": "Usage documentation and deliverables",
+      "criteria": [
+        "README describes API, examples, CLI and npm test; exactly slugify.mjs, cli.mjs, slugify.test.mjs and README.md are new deliverables; no dependencies added."
+      ],
+      "state": "open",
+      "author_agent": "A1",
+      "evidence": [],
+      "updated_at": "2026-10-20T17:07:59.382Z"
+    },
+    {
+      "mission_id": "660cf934-c468-4497-8545-6abbde987f79",
+      "id": "tests",
+      "revision": 1,
+      "anchor": "`slugify.test.mjs`: Node's built-in test/assert tests for the examples, empty input, repeated separators, type errors, and CLI success and no-argument failure (spawn the CLI).",
+      "title": "Built-in automated tests",
+      "criteria": [
+        "Node built-in test/assert covers all roadmap examples, empty input, repeated separators, type errors, spawned CLI success and no-argument failure; npm test passes."
+      ],
+      "state": "open",
+      "author_agent": "A1",
+      "evidence": [],
+      "updated_at": "2026-10-20T17:07:59.306Z"
+    }
+  ],
+  "reviews": [],
+  "claims": [
+    {
+      "mission_id": "660cf934-c468-4497-8545-6abbde987f79",
+      "id": "a2-cli",
+      "intention_id": null,
+      "agent_id": "A2",
+      "run_id": "52f91970-423f-452a-9d14-42c0138233e0",
+      "generation": 1,
+      "resources": [
+        "file:cli.mjs"
+      ],
+      "state": "released",
+      "acquired_at": "2026-10-20T17:07:42.182Z",
+      "released_at": "2026-10-20T17:07:55.152Z"
+    },
+    {
+      "mission_id": "660cf934-c468-4497-8545-6abbde987f79",
+      "id": "a2-cli-path",
+      "intention_id": null,
+      "agent_id": "A2",
+      "run_id": "52f91970-423f-452a-9d14-42c0138233e0",
+      "generation": 1,
+      "resources": [
+        "cli.mjs"
+      ],
+      "state": "released",
+      "acquired_at": "2026-10-20T17:08:00.714Z",
+      "released_at": "2026-10-20T17:08:06.845Z"
+    },
+    {
+      "mission_id": "660cf934-c468-4497-8545-6abbde987f79",
+      "id": "a3-docs",
+      "intention_id": null,
+      "agent_id": "A3",
+      "run_id": "62084fc9-b950-4fe2-9eef-47ffb26d5d4a",
+      "generation": 1,
+      "resources": [
+        "file:README.md"
+      ],
+      "state": "released",
+      "acquired_at": "2026-10-20T17:07:40.065Z",
+      "released_at": "2026-10-20T17:08:07.416Z"
+    },
+    {
+      "mission_id": "660cf934-c468-4497-8545-6abbde987f79",
+      "id": "a5-independent-review",
+      "intention_id": null,
+      "agent_id": "A5",
+      "run_id": "1e52a61d-8e4e-43c2-ab77-5566545f49ae",
+      "generation": 1,
+      "resources": [
+        "resource:independent-review"
+      ],
+      "state": "released",
+      "acquired_at": "2026-10-20T17:07:43.553Z",
+      "released_at": "2026-10-20T17:08:15.762Z"
+    },
+    {
+      "mission_id": "660cf934-c468-4497-8545-6abbde987f79",
+      "id": "a1-integration",
+      "intention_id": null,
+      "agent_id": "A1",
+      "run_id": "933dc639-bf9d-4e86-978b-726a393f4db2",
+      "generation": 1,
+      "resources": [
+        "resource:integration"
+      ],
+      "state": "released",
+      "acquired_at": "2026-10-20T17:07:38.612Z",
+      "released_at": "2026-10-20T17:08:35.671Z"
+    },
+    {
+      "mission_id": "660cf934-c468-4497-8545-6abbde987f79",
+      "id": "a1-cli",
+      "intention_id": null,
+      "agent_id": "A1",
+      "run_id": "933dc639-bf9d-4e86-978b-726a393f4db2",
+      "generation": 1,
+      "resources": [
+        "cli.mjs"
+      ],
+      "state": "released",
+      "acquired_at": "2026-10-20T17:08:27.127Z",
+      "released_at": "2026-10-20T17:08:35.671Z"
+    },
+    {
+      "mission_id": "660cf934-c468-4497-8545-6abbde987f79",
+      "id": "a3-docs-path",
+      "intention_id": null,
+      "agent_id": "A3",
+      "run_id": "62084fc9-b950-4fe2-9eef-47ffb26d5d4a",
+      "generation": 1,
+      "resources": [
+        "README.md"
+      ],
+      "state": "released",
+      "acquired_at": "2026-10-20T17:08:14.225Z",
+      "released_at": "2026-10-20T17:08:35.675Z"
+    },
+    {
+      "mission_id": "660cf934-c468-4497-8545-6abbde987f79",
+      "id": "a4-core-tests",
+      "intention_id": null,
+      "agent_id": "A4",
+      "run_id": "fae615e3-b92c-4139-baeb-6c90d147e1aa",
+      "generation": 1,
+      "resources": [
+        "file:slugify.mjs",
+        "file:slugify.test.mjs",
+        "resource:verification"
+      ],
+      "state": "released",
+      "acquired_at": "2026-10-20T17:07:49.249Z",
+      "released_at": "2026-10-20T17:08:35.678Z"
+    },
+    {
+      "mission_id": "660cf934-c468-4497-8545-6abbde987f79",
+      "id": "a4-real-paths",
+      "intention_id": null,
+      "agent_id": "A4",
+      "run_id": "fae615e3-b92c-4139-baeb-6c90d147e1aa",
+      "generation": 1,
+      "resources": [
+        "slugify.mjs",
+        "slugify.test.mjs"
+      ],
+      "state": "released",
+      "acquired_at": "2026-10-20T17:08:32.439Z",
+      "released_at": "2026-10-20T17:08:35.678Z"
+    }
+  ],
+  "checkpoints": [
+    {
+      "id": "b87e6f0f-ccdf-4dc4-bac3-9adc69169e7f",
+      "mission_id": "660cf934-c468-4497-8545-6abbde987f79",
+      "agent_id": "A5",
+      "run_id": "1e52a61d-8e4e-43c2-ab77-5566545f49ae",
+      "body": {
+        "read": [
+          "Original ROADMAP.md from join",
+          "package.json",
+          "No repository AGENTS.md present"
+        ],
+        "scope": "Independent final requirement and original-roadmap coverage review",
+        "pending": "Await implemented sources, requirement revisions and frozen manifest from A1; will inspect source and shared verifier evidence without duplicate test runs."
+      },
+      "created_at": "2026-10-20T17:07:49.003Z"
+    },
+    {
+      "id": "a2-cli-implemented",
+      "mission_id": "660cf934-c468-4497-8545-6abbde987f79",
+      "agent_id": "A2",
+      "run_id": "52f91970-423f-452a-9d14-42c0138233e0",
+      "body": {
+        "next": "Release claim and independently review final requirements/manifest when ready.",
+        "files": [
+          "cli.mjs"
+        ],
+        "decision": "CLI joins all arguments with spaces and prints via console.log; no arguments prints short usage to stderr and sets exitCode 1.",
+        "verification": "Pending designated shared verification; no commands run by A2."
+      },
+      "created_at": "2026-10-20T17:07:55.141Z"
+    },
+    {
+      "id": "0abc876c-c945-4ed0-baa0-de0ecd21d830",
+      "mission_id": "660cf934-c468-4497-8545-6abbde987f79",
+      "agent_id": "A1",
+      "run_id": "933dc639-bf9d-4e86-978b-726a393f4db2",
+      "body": {
+        "role": "integration",
+        "decision": "A4 requested as sole npm test verification contributor; A5 requested for final requirement and coverage reviews. Supplied package.json unchanged; no local AGENTS.md.",
+        "requirements": [
+          "api",
+          "cli",
+          "tests",
+          "docs"
+        ]
+      },
+      "created_at": "2026-10-20T17:08:05.625Z"
+    },
+    {
+      "id": "d1e77a38-598f-4507-8b86-298356052f15",
+      "mission_id": "660cf934-c468-4497-8545-6abbde987f79",
+      "agent_id": "A3",
+      "run_id": "62084fc9-b950-4fe2-9eef-47ffb26d5d4a",
+      "body": {
+        "pending": "Available for exact final manifest requirement/coverage review.",
+        "completed": "README.md published; manually checked against original roadmap and package test script.",
+        "verification": "No duplicate commands; A4 owns verification."
+      },
+      "created_at": "2026-10-20T17:08:07.407Z"
+    },
+    {
+      "id": "a2-corrected-handoff",
+      "mission_id": "660cf934-c468-4497-8545-6abbde987f79",
+      "agent_id": "A2",
+      "run_id": "52f91970-423f-452a-9d14-42c0138233e0",
+      "body": {
+        "next": "A1 notified to implement CLI or delegate A4; A5 already owns independent review.",
+        "status": "Blocked from publishing after mesh_yield revoked run; CLI absent, both patches rejected.",
+        "evidence": [
+          "a2-write-cli: CLAIM_REQUIRED",
+          "a2-write-cli-v2: run_revoked"
+        ],
+        "unresolved": [
+          "CLI implementation must be published by active peer"
+        ]
+      },
+      "created_at": "2026-10-20T17:08:16.156Z"
+    },
+    {
+      "id": "a2b94a02-8e58-40ac-9814-ec45c1ad3eba",
+      "mission_id": "660cf934-c468-4497-8545-6abbde987f79",
+      "agent_id": "A3",
+      "run_id": "62084fc9-b950-4fe2-9eef-47ffb26d5d4a",
+      "body": {
+        "pending": "A1 notified to implement README with full documented content; close a3-docs-ready and a3-correction-docs consultations.",
+        "evidence": "package.json test script read; no source commands/tests run.",
+        "correction": "README was NOT published. First patch failed CLAIM_REQUIRED because claim used file: prefix. Premature yield revoked further publication; correct README.md claim then granted but patch returned run_revoked."
+      },
+      "created_at": "2026-10-20T17:08:33.580Z"
+    }
+  ],
+  "completion_proposals": []
+}

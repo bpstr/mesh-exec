@@ -1,0 +1,62 @@
+[
+  {
+    "id": "933dc639-bf9d-4e86-978b-726a393f4db2",
+    "agent_id": "A1",
+    "generation": 1,
+    "state": "aborted",
+    "started_at": "2026-10-20T17:07:27.176Z",
+    "ended_at": "2026-10-20T17:08:35.671Z",
+    "reason": "aborted",
+    "handoff": null,
+    "result": null,
+    "log_dir": "/private/tmp/mesh-exec-coordination-20261020/runtime/runs/660cf934-c468-4497-8545-6abbde987f79/A1/933dc639-bf9d-4e86-978b-726a393f4db2"
+  },
+  {
+    "id": "62084fc9-b950-4fe2-9eef-47ffb26d5d4a",
+    "agent_id": "A3",
+    "generation": 1,
+    "state": "aborted",
+    "started_at": "2026-10-20T17:07:27.182Z",
+    "ended_at": "2026-10-20T17:08:35.675Z",
+    "reason": "aborted",
+    "handoff": null,
+    "result": null,
+    "log_dir": "/private/tmp/mesh-exec-coordination-20261020/runtime/runs/660cf934-c468-4497-8545-6abbde987f79/A3/62084fc9-b950-4fe2-9eef-47ffb26d5d4a"
+  },
+  {
+    "id": "52f91970-423f-452a-9d14-42c0138233e0",
+    "agent_id": "A2",
+    "generation": 1,
+    "state": "aborted",
+    "started_at": "2026-10-20T17:07:27.183Z",
+    "ended_at": "2026-10-20T17:08:35.682Z",
+    "reason": "aborted",
+    "handoff": null,
+    "result": null,
+    "log_dir": "/private/tmp/mesh-exec-coordination-20261020/runtime/runs/660cf934-c468-4497-8545-6abbde987f79/A2/52f91970-423f-452a-9d14-42c0138233e0"
+  },
+  {
+    "id": "fae615e3-b92c-4139-baeb-6c90d147e1aa",
+    "agent_id": "A4",
+    "generation": 1,
+    "state": "aborted",
+    "started_at": "2026-10-20T17:07:27.186Z",
+    "ended_at": "2026-10-20T17:08:35.678Z",
+    "reason": "aborted",
+    "handoff": null,
+    "result": null,
+    "log_dir": "/private/tmp/mesh-exec-coordination-20261020/runtime/runs/660cf934-c468-4497-8545-6abbde987f79/A4/fae615e3-b92c-4139-baeb-6c90d147e1aa"
+  },
+  {
+    "id": "1e52a61d-8e4e-43c2-ab77-5566545f49ae",
+    "agent_id": "A5",
+    "generation": 1,
+    "state": "aborted",
+    "started_at": "2026-10-20T17:07:27.187Z",
+    "ended_at": "2026-10-20T17:08:35.669Z",
+    "reason": "aborted",
+    "handoff": null,
+    "result": null,
+    "log_dir": "/private/tmp/mesh-exec-coordination-20261020/runtime/runs/660cf934-c468-4497-8545-6abbde987f79/A5/1e52a61d-8e4e-43c2-ab77-5566545f49ae"
+  }
+]

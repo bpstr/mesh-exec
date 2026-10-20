@@ -1,0 +1,605 @@
+diff --git a/src/codex.ts b/src/codex.ts
+index cff68cf..125a9cf 100644
+--- a/src/codex.ts
++++ b/src/codex.ts
+@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
+ import { isAbsolute, join, resolve } from 'node:path';
+ import { StringDecoder } from 'node:string_decoder';
+ import { promisify } from 'node:util';
++import { coordinationInstructions } from './coordination.js';
+ 
+ /** The final message is a handoff, never proof that the mission is complete. */
+ export const CODEX_RESULT_SCHEMA = {
+@@ -88,14 +89,7 @@ export function buildCodexInvocation(options: CodexInvocationOptions): CodexInvo
+     'Implement the mission roadmap in this repository. Consult with the other mesh peers.',
+     `Mission: ${options.missionId}. Roadmap: ${JSON.stringify(roadmapPath)}.`,
+     `Your slot is ${options.slotId}; this is run ${options.runId}, generation ${options.generation}.`,
+-    'Call mesh_join first. Read the original roadmap, applicable repository instructions, the shared board, and your durable inbox.',
+-    'Choose your own useful contribution. Consult peers whose work or knowledge affects it, and claim resources before changing them.',
+-    'The local checkout is read-only. Authorized changes and command execution use the mesh workspace tools, which enforce shared-workspace ownership.',
+-    'Do not start other agent CLIs or subagents. The runner owns the population; all peers share this same mission.',
+-    'Use mesh_poll at bootstrap, at work transitions, before dependent changes, and before exit. A notification is not an acknowledgment: handle messages explicitly with mesh_ack.',
+-    'Record evidence, decisions, corrections, and a checkpoint through mesh tools before exiting. When useful work is unavailable, yield with its dependency.',
+-    'For idle or blocked outcomes, call mesh_yield and copy its returned workRevision into the final work_revision field, so arriving work cannot be lost during replacement.',
+-    'Propose completion only through the mesh acceptance process. Your final message is a structured run handoff, not authority to complete the mission.',
++    coordinationInstructions,
+   ].join('\n');
+ 
+   const args = [
+diff --git a/src/store.ts b/src/store.ts
+index 297015e..aeea35e 100644
+--- a/src/store.ts
++++ b/src/store.ts
+@@ -65,6 +65,11 @@ export function normalizeResource(input: string): string {
+     );
+     return input;
+   }
++  invariant(
++    !input.startsWith('file:'),
++    'INVALID_RESOURCE',
++    'File claims use repository-relative paths without a file: prefix; use resource:name only for coordination.',
++  );
+   if (input === '.' || input === './**') return '.';
+   invariant(
+     !input.startsWith('/') && !input.split('/').some((p) => p === '..'),
+@@ -726,6 +731,7 @@ export class Store {
+         p.agentId,
+         JSON.stringify(body),
+       ]);
++      await this.changed(tx, p.missionId);
+       await this.events({ ...p, kind: 'checkpoint.recorded', data: { id, body } }, tx);
+     });
+     return { id };
+@@ -913,8 +919,15 @@ export class Store {
+         'Requirement anchor must appear in the original roadmap',
+       );
+       invariant(input.criteria.length > 0, 'NO_CRITERIA', 'Acceptance criteria are required');
+-      const old = await tx.query<{ revision: number }>(
+-        'SELECT revision FROM requirements WHERE mission_id=$1 AND id=$2',
++      const old = await tx.query<{
++        revision: number;
++        anchor: string;
++        title: string;
++        criteria: string[];
++        state: string;
++        evidence: unknown[];
++      }>(
++        'SELECT revision,anchor,title,criteria,state,evidence FROM requirements WHERE mission_id=$1 AND id=$2',
+         [p.missionId, input.id],
+       );
+       invariant(
+@@ -928,6 +941,25 @@ export class Store {
+         'EVIDENCE_REQUIRED',
+         'Implementation needs evidence',
+       );
++      const previous = old.rows[0];
++      if (
++        previous &&
++        canonicalJson({
++          anchor: input.anchor,
++          title: input.title,
++          criteria: input.criteria,
++          state: input.state ?? 'open',
++          evidence: input.evidence ?? [],
++        }) ===
++          canonicalJson({
++            anchor: previous.anchor,
++            title: previous.title,
++            criteria: previous.criteria,
++            state: previous.state,
++            evidence: previous.evidence,
++          })
++      )
++        return { id: input.id, revision: previous.revision, unchanged: true };
+       await tx.query(
+         `INSERT INTO requirements(mission_id,id,revision,anchor,title,criteria,state,author_agent,evidence) VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9::jsonb)
+         ON CONFLICT(mission_id,id) DO UPDATE SET revision=$3,anchor=$4,title=$5,criteria=$6::jsonb,state=$7,author_agent=$8,evidence=$9::jsonb,updated_at=now()`,
+diff --git a/src/tools.ts b/src/tools.ts
+index 204395e..84e2885 100644
+--- a/src/tools.ts
++++ b/src/tools.ts
+@@ -1,4 +1,5 @@
+ import { randomUUID } from 'node:crypto';
++import { TaskState } from '@a2a-js/sdk';
+ import { z } from 'zod';
+ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+ import { Store, normalizeResource } from './store.js';
+@@ -33,6 +34,57 @@ export class MeshTools {
+     readonly workspace: Workspace,
+     readonly completion: Completion,
+   ) {}
++  private async snapshot(
++    p: Principal,
++    input: { query?: string; sinceRevision?: string; waitMs?: number } = {},
++  ) {
++    if (input.sinceRevision && !input.query) {
++      const state = await this.store.waitForRevision(
++        p.missionId,
++        input.sinceRevision,
++        input.waitMs ?? 0,
++      );
++      if (state.workRevision === input.sinceRevision && state.state === 'active')
++        return { unchanged: true, workRevision: state.workRevision };
++    }
++    // Keep the initial revision so a concurrent change triggers the next refresh.
++    const board = (await this.store.board(p, input.query)) as Record<string, any>;
++    const [inbox, reviews, operations, consultations] = await Promise.all([
++      this.a2a.poll(p),
++      this.store.db.query(
++        'SELECT id,agent_id,kind,target_id,target_revision,manifest_hash,coverage_hash,verdict,reasoning FROM reviews WHERE mission_id=$1 ORDER BY created_at DESC,id LIMIT 100',
++        [p.missionId],
++      ),
++      this.store.db.query(
++        `SELECT operation_id,agent_id,kind,state,request->'argv' AS argv,
++         result->'exitCode' AS exit_code,result->'sourceAfter' AS source_after,error
++         FROM workspace_operations WHERE mission_id=$1 ORDER BY updated_at DESC,operation_id LIMIT 50`,
++        [p.missionId],
++      ),
++      this.store.db.query(
++        'SELECT task_id,sender_id,recipient_id,state FROM a2a_tasks WHERE mission_id=$1 AND NOT(state=ANY($2::integer[])) ORDER BY updated_at,task_id LIMIT 100',
++        [
++          p.missionId,
++          [
++            TaskState.TASK_STATE_COMPLETED,
++            TaskState.TASK_STATE_FAILED,
++            TaskState.TASK_STATE_CANCELED,
++            TaskState.TASK_STATE_REJECTED,
++          ],
++        ],
++      ),
++    ]);
++    return {
++      ...board,
++      workRevision: board.mission.revision,
++      inbox,
++      reviews: reviews.rows,
++      operations: operations.rows,
++      consultations: consultations.rows,
++      // Discovery lists are bounded; acceptance checks all records.
++      limits: { reviews: 100, operations: 50, consultations: 100 },
++    };
++  }
+   server(p: Principal): McpServer {
+     const server = new McpServer(
+       { name: 'mesh-exec', version: '0.1.0' },
+@@ -99,20 +151,22 @@ export class MeshTools {
+         return {
+           identity: p,
+           roadmap: { path: m.roadmap_path, text: m.roadmap_text, hash: m.roadmap_hash },
+-          board: await this.store.board(p),
++          board: await this.snapshot(p),
+           checkpoints: checkpoints.rows,
+           protocol: { a2a: '1.0', mcp: 'Streamable HTTP' },
+-          workflow:
+-            'Choose work yourself. Use mesh_poll before dependent work and before exiting. Claim paths, then use mesh_read/mesh_patch. Declare requirement criteria and evidence. Review peers and preserve handoffs.',
+         };
+       },
+     );
+     tool(
+       'mesh_board',
+-      'Inspect current requirements, intentions, claims, knowledge, and peers. Search uses PostgreSQL full text.',
+-      { query: z.string().max(400).optional() },
++      'Read shared work, inbox, open consultations, reviews, and reusable operation evidence. sinceRevision suppresses unchanged snapshots; waitMs waits for change. Search filters knowledge only. Lists are bounded; final acceptance checks all records.',
++      {
++        query: z.string().max(400).optional(),
++        sinceRevision: z.string().regex(/^\d+$/).optional(),
++        waitMs: z.number().int().min(0).max(30_000).optional(),
++      },
+       true,
+-      (a) => this.store.board(p, a.query),
++      (a) => this.snapshot(p, a),
+     );
+     tool(
+       'mesh_find_peers',
+@@ -130,7 +184,7 @@ export class MeshTools {
+     );
+     tool(
+       'mesh_claim',
+-      'Atomically claim a self-selected resource bundle. Conflicts return current owners; the runner never chooses substitute work.',
++      'Atomically claim repository-relative paths (src/module.ts), subtrees (src/**), or coordination names (resource:integration). Paths have no file: prefix. Conflicts return owners; choose other useful work.',
+       {
+         id,
+         resources: z.array(z.string()).min(1).max(200),
+@@ -203,14 +257,32 @@ export class MeshTools {
+     );
+     tool(
+       'mesh_ack',
+-      'Explicitly record handling, deferral, rejection, or supersession of one inbox delivery. Reading alone is not acknowledgement.',
++      'Acknowledge handled inbox deliveries. Supply deliveryId or a batch of deliveryIds with the same disposition. Each acknowledgment is idempotent; a failed batch may have applied earlier entries. This does not close consultation tasks.',
+       {
+-        deliveryId: id,
++        deliveryId: id.optional(),
++        deliveryIds: z.array(id).min(1).max(128).optional(),
+         disposition: z.enum(['handled', 'deferred', 'rejected', 'superseded']).optional(),
+         reason: text.optional(),
+       },
+       false,
+-      (a) => this.a2a.ack(p, a),
++      async (a) => {
++        invariant(
++          Boolean(a.deliveryId) !== Boolean(a.deliveryIds),
++          'INVALID_ACK',
++          'Supply exactly one of deliveryId or deliveryIds',
++        );
++        if (a.deliveryId) return this.a2a.ack(p, a);
++        const acknowledgments = [];
++        for (const deliveryId of a.deliveryIds)
++          acknowledgments.push(
++            await this.a2a.ack(p, {
++              deliveryId,
++              disposition: a.disposition,
++              reason: a.reason,
++            }),
++          );
++        return { acknowledgments };
++      },
+     );
+     tool(
+       'mesh_remember',
+@@ -264,7 +336,7 @@ export class MeshTools {
+     );
+     tool(
+       'mesh_requirement',
+-      'Create or revise an agent-interpreted requirement anchored to literal original roadmap text. Criteria are indexed from zero; each needs evidence.',
++      'Create or revise a requirement anchored to literal roadmap text. Criteria are indexed from zero; each needs evidence. An identical update preserves revision and author; real changes invalidate prior reviews.',
+       {
+         id,
+         anchor: z.string().min(1),
+@@ -381,8 +453,7 @@ export class MeshTools {
+       { reason: z.string().min(1), waitingOn: z.array(id).optional() },
+       false,
+       async (a) => {
+-        await this.workspace.cancelRun(p.runId);
+-        return this.store.yield(p, a.reason, a.waitingOn);
++        return this.workspace.yieldRun(p.runId, () => this.store.yield(p, a.reason, a.waitingOn));
+       },
+     );
+     tool(
+diff --git a/src/workspace.ts b/src/workspace.ts
+index 4c3a76e..dffec04 100644
+--- a/src/workspace.ts
++++ b/src/workspace.ts
+@@ -269,6 +269,7 @@ export class Workspace {
+   private quarantine?: string;
+   private readonly commands = new Map<string, RunningCommand>();
+   private readonly revokedRuns = new Set<string>();
++  private readonly yieldingRuns = new Set<string>();
+   private activePatch?: { runId: string; done: Promise<void> };
+ 
+   private constructor(
+@@ -687,7 +688,7 @@ export class Workspace {
+     return this.gated(async () => {
+       this.assertUsable();
+       invariant(
+-        !this.revokedRuns.has(principal.runId),
++        !this.runUnavailable(principal.runId),
+         'run_revoked',
+         'This run can no longer publish changes.',
+       );
+@@ -774,7 +775,7 @@ export class Workspace {
+           { ...input, changes: input.changes.map(({ content: _content, ...change }) => change) },
+           journal,
+         );
+-        if (this.revokedRuns.has(principal.runId)) {
++        if (this.runUnavailable(principal.runId)) {
+           await this.setState(principal, input.operationId, 'cancelled');
+           return this.operation(principal, input.operationId);
+         }
+@@ -1031,7 +1032,7 @@ export class Workspace {
+   ): Promise<WorkspaceOperation> {
+     this.assertUsable();
+     invariant(
+-      verification || !this.revokedRuns.has(principal.runId),
++      verification || !this.runUnavailable(principal.runId),
+       'run_revoked',
+       'This run can no longer start commands.',
+     );
+@@ -1119,7 +1120,7 @@ export class Workspace {
+         'Final verification has paused new command admission.',
+       );
+       invariant(
+-        verification || !this.revokedRuns.has(principal.runId),
++        verification || !this.runUnavailable(principal.runId),
+         'run_revoked',
+         'This run can no longer start commands.',
+       );
+@@ -1231,7 +1232,7 @@ export class Workspace {
+         },
+         input.operationId,
+       );
+-      if (running.cancelled || (!verification && this.revokedRuns.has(running.principal.runId))) {
++      if (running.cancelled || (!verification && this.runUnavailable(running.principal.runId))) {
+         await this.setState(running.principal, input.operationId, 'cancelled');
+         return;
+       }
+@@ -1241,7 +1242,7 @@ export class Workspace {
+         open(stdoutPath, 'a', 0o600),
+         open(stderrPath, 'a', 0o600),
+       ]);
+-      if (running.cancelled || (!verification && this.revokedRuns.has(running.principal.runId))) {
++      if (running.cancelled || (!verification && this.runUnavailable(running.principal.runId))) {
+         await Promise.all([stdoutHandle.close(), stderrHandle.close()]);
+         await this.setState(running.principal, input.operationId, 'cancelled');
+         return;
+@@ -1471,8 +1472,28 @@ export class Workspace {
+     return this.operation(principal, operationId);
+   }
+ 
++  private runUnavailable(runId: string): boolean {
++    return this.revokedRuns.has(runId) || this.yieldingRuns.has(runId);
++  }
++
++  async yieldRun<T>(runId: string, releaseClaims: () => Promise<T>): Promise<T> {
++    invariant(!this.runUnavailable(runId), 'run_revoked', 'Run is revoked or already yielding.');
++    this.yieldingRuns.add(runId);
++    try {
++      await this.drainRun(runId);
++      return await releaseClaims();
++    } finally {
++      // A concurrent supervisor cancellation remains in revokedRuns.
++      this.yieldingRuns.delete(runId);
++    }
++  }
++
+   async cancelRun(runId: string): Promise<void> {
+     this.revokedRuns.add(runId);
++    await this.drainRun(runId);
++  }
++
++  private async drainRun(runId: string): Promise<void> {
+     const patch = this.activePatch?.runId === runId ? this.activePatch.done : undefined;
+     const commands = [...this.commands.values()].filter(
+       (command) => command.principal.runId === runId,
+diff --git a/test/daemon.test.ts b/test/daemon.test.ts
+index 6662905..9af78d1 100644
+--- a/test/daemon.test.ts
++++ b/test/daemon.test.ts
+@@ -112,6 +112,23 @@ test('independent MCP peers consult over A2A, publish in one checkout, and compl
+   const joined = await f.call(f.ca, 'mesh_join');
+   assert.equal(joined.identity.agentId, 'A1');
+   assert.match(joined.roadmap.text, /counter/);
++  assert.equal(joined.board.inbox.messages.length, 0);
++  const unchanged = await f.call(f.ca, 'mesh_board', {
++    sinceRevision: joined.board.workRevision,
++    waitMs: 5,
++  });
++  assert.deepEqual(unchanged, { unchanged: true, workRevision: joined.board.workRevision });
++  const waiting = f.call(f.ca, 'mesh_board', {
++    sinceRevision: unchanged.workRevision,
++    waitMs: 2000,
++  });
++  await f.call(f.cb, 'mesh_checkpoint', { body: { summary: 'Available for independent review' } });
++  const refreshed = await waiting;
++  assert.notEqual(refreshed.workRevision, unchanged.workRevision);
++  assert.equal(
++    refreshed.peers.find((p: any) => p.id === 'A2').handoff.summary,
++    'Available for independent review',
++  );
+   await f.call(f.ca, 'mesh_claim', {
+     id: 'claim-counter',
+     resources: ['counter.txt'],
+@@ -130,7 +147,9 @@ test('independent MCP peers consult over A2A, publish in one checkout, and compl
+     text: 'Should zero be represented as "0"?\nPlease inspect the roadmap.',
+     kind: 'question',
+   });
+-  const incoming = await f.call(f.cb, 'mesh_poll');
++  const consultationBoard = await f.call(f.cb, 'mesh_board');
++  assert.equal(consultationBoard.consultations[0].task_id, request.taskId);
++  const incoming = consultationBoard.inbox;
+   assert.equal(incoming.messages.length, 1);
+   await f.call(f.cb, 'mesh_reply', {
+     taskId: request.taskId,
+@@ -185,6 +204,14 @@ test('independent MCP peers consult over A2A, publish in one checkout, and compl
+     verdict: 'pass',
+     reasoning: 'Compared the original roadmap to R1; no requirement is omitted.',
+   });
++  const reviewed = await f.call(f.ca, 'mesh_board');
++  assert.equal(reviewed.reviews.length, 2);
++  assert.equal(
++    reviewed.operations.find((op: any) => op.operation_id === 'write-counter').state,
++    'applied',
++  );
++  assert.equal(reviewed.consultations.length, 0);
++  assert.equal(reviewed.inbox.messages.length, 0);
+   await f.call(f.ca, 'mesh_yield', { reason: 'Implementation ready for final verification' });
+   const proposal = await f.call(f.ca, 'mesh_propose_completion', {
+     operationId: 'finish-1',
+@@ -225,6 +252,84 @@ test('independent MCP peers consult over A2A, publish in one checkout, and compl
+   assert.match(await readFile(join(exportDir, 'messages.json'), 'utf8'), /starts at zero/);
+ });
+ 
++test('yield releases claims without ending a live peer; corrected path claims can publish', async (t) => {
++  const f = await fixture();
++  t.after(f.close);
++  await assert.rejects(
++    f.call(f.ca, 'mesh_claim', {
++      id: 'bad-path',
++      resources: ['file:counter.txt'],
++      description: 'Write counter',
++    }),
++    /INVALID_RESOURCE.*without a file: prefix/,
++  );
++  await f.call(f.ca, 'mesh_claim', {
++    id: 'first',
++    resources: ['counter.txt'],
++    description: 'Write counter',
++  });
++  await f.call(f.ca, 'mesh_yield', { reason: 'Release initial contribution' });
++  await assert.rejects(
++    f.call(f.ca, 'mesh_patch', {
++      operationId: 'without-reclaim',
++      changes: [{ path: 'counter.txt', expectedHash: null, content: '0\n' }],
++    }),
++    /CLAIM_REQUIRED/,
++  );
++  await f.call(f.ca, 'mesh_claim', {
++    id: 'correction',
++    resources: ['counter.txt'],
++    description: 'Correct source before final review',
++  });
++  const result = await f.call(f.ca, 'mesh_patch', {
++    operationId: 'after-reclaim',
++    claimId: 'correction',
++    changes: [{ path: 'counter.txt', expectedHash: null, content: '0\n' }],
++  });
++  assert.equal(result.state, 'applied');
++  await f.daemon.workspace.cancelRun(f.a.principal.runId);
++  await assert.rejects(
++    f.call(f.ca, 'mesh_patch', {
++      operationId: 'after-revocation',
++      claimId: 'correction',
++      changes: [{ path: 'counter.txt', expectedHash: result.result.files[0].hash, content: '1\n' }],
++    }),
++    /run_revoked/,
++  );
++});
++
++test('batched acknowledgments preserve task state and safely replay after a partial failure', async (t) => {
++  const f = await fixture();
++  t.after(f.close);
++  await f.call(f.ca, 'mesh_send', {
++    recipientId: 'A2',
++    messageId: 'first',
++    text: 'Inspect source',
++  });
++  await f.call(f.ca, 'mesh_send', {
++    recipientId: 'A2',
++    messageId: 'second',
++    text: 'Inspect coverage',
++  });
++  const board = await f.call(f.cb, 'mesh_board');
++  const deliveryIds = board.inbox.messages.map((m: any) => m.deliveryId);
++  assert.equal(deliveryIds.length, 2);
++  await assert.rejects(
++    f.call(f.cb, 'mesh_ack', { deliveryId: deliveryIds[0], deliveryIds }),
++    /INVALID_ACK/,
++  );
++  await assert.rejects(
++    f.call(f.cb, 'mesh_ack', { deliveryIds: [deliveryIds[0], 'missing'] }),
++    /NOT_FOUND/,
++  );
++  const acknowledged = await f.call(f.cb, 'mesh_ack', { deliveryIds });
++  assert.equal(acknowledged.acknowledgments[0].replayed, true);
++  assert.equal(acknowledged.acknowledgments[1].replayed, false);
++  const after = await f.call(f.cb, 'mesh_board');
++  assert.equal(after.inbox.messages.length, 0);
++  assert.equal(after.consultations.length, 2);
++});
++
+ test('completion refuses stale coverage, unhandled replies, and a changing validation source', async (t) => {
+   const f = await fixture();
+   t.after(f.close);
+diff --git a/test/store.test.ts b/test/store.test.ts
+index cb4b847..68c9de3 100644
+--- a/test/store.test.ts
++++ b/test/store.test.ts
+@@ -61,6 +61,54 @@ async function setup() {
+   return { db, store, mission, a, b, epoch };
+ }
+ 
++test('identical requirement publication preserves revision, author, reviews, and work revision', async (t) => {
++  const s = await setup();
++  t.after(() => s.db.close());
++  const requirement = {
++    id: 'R1',
++    anchor: 'Implement a shared counter.',
++    title: 'Counter',
++    criteria: ['Starts at zero'],
++    state: 'implemented' as const,
++    evidence: [{ criterion: 0, description: 'Inspected source' }],
++  };
++  await s.store.requirement(s.a.principal, requirement);
++  await s.store.review(s.b.principal, {
++    id: 'review',
++    kind: 'requirement',
++    targetId: 'R1',
++    targetRevision: 1,
++    manifestHash: 'a'.repeat(64),
++    verdict: 'pass',
++    reasoning: 'Inspected implementation',
++  });
++  const before = await s.store.observe(s.mission.id);
++  assert.deepEqual(
++    await s.store.requirement(s.b.principal, { ...requirement, expectedRevision: 1 }),
++    { id: 'R1', revision: 1, unchanged: true },
++  );
++  assert.deepEqual(await s.store.observe(s.mission.id), before);
++  const stored = await s.db.query('SELECT author_agent,revision FROM requirements WHERE id=$1', [
++    'R1',
++  ]);
++  assert.equal(stored.rows[0].author_agent, s.a.principal.agentId);
++  assert.equal(stored.rows[0].revision, 1);
++  assert.equal((await s.db.query('SELECT id FROM reviews WHERE target_revision=1')).rowCount, 1);
++  await assert.rejects(
++    s.store.requirement(s.b.principal, { ...requirement, expectedRevision: 2 }),
++    /current requirement revision/,
++  );
++  assert.deepEqual(
++    await s.store.requirement(s.a.principal, {
++      ...requirement,
++      expectedRevision: 1,
++      criteria: ['Starts at one'],
++    }),
++    { id: 'R1', revision: 2 },
++  );
++  assert.notEqual((await s.store.observe(s.mission.id)).workRevision, before.workRevision);
++});
++
+ test('atomic overlapping claim bundles have one winner; stale generations cannot write', async (t) => {
+   const s = await setup();
+   t.after(() => s.db.close());
+diff --git a/test/workspace.test.ts b/test/workspace.test.ts
+index a317ea6..0595547 100644
+--- a/test/workspace.test.ts
++++ b/test/workspace.test.ts
+@@ -364,6 +364,50 @@ test('cancellation terminates the managed process group and revoked runs cannot
+   }
+ });
+ 
++test('yield drains commands, resumes admission, and cannot undo concurrent supervisor revocation', async () => {
++  const f = await fixture();
++  try {
++    await f.workspace.exec(principal, {
++      operationId: 'yield-command',
++      mode: 'read',
++      argv: [process.execPath, '-e', 'setInterval(()=>{},1024)'],
++    });
++    for (
++      let index = 0;
++      index < 128 && (await f.workspace.operation(principal, 'yield-command')).state !== 'running';
++      index++
++    )
++      await pause(8);
++    await f.workspace.yieldRun(principal.runId, async () => {
++      assert.equal((await f.workspace.operation(principal, 'yield-command')).state, 'cancelled');
++      await assert.rejects(
++        f.workspace.patch(principal, {
++          operationId: 'during-yield',
++          changes: [{ path: 'new.ts', expectedHash: null, content: 'blocked' }],
++        }),
++        (error: any) => error.code === 'run_revoked',
++      );
++    });
++    const resumed = await f.workspace.patch(principal, {
++      operationId: 'after-yield',
++      changes: [{ path: 'new.ts', expectedHash: null, content: 'resumed' }],
++    });
++    assert.equal(resumed.state, 'applied');
++    await f.workspace.yieldRun(principal.runId, async () => {
++      await f.workspace.cancelRun(principal.runId);
++    });
++    await assert.rejects(
++      f.workspace.patch(principal, {
++        operationId: 'after-permanent-revocation',
++        changes: [{ path: 'other.ts', expectedHash: null, content: 'blocked' }],
++      }),
++      (error: any) => error.code === 'run_revoked',
++    );
++  } finally {
++    await f.cleanup();
++  }
++});
++
+ test('a final barrier drains full command capacity without deadlocking queued source mutations', async () => {
+   const f = await fixture({ maxCommands: 2 });
+   try {

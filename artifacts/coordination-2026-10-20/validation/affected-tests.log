@@ -1,0 +1,30 @@
+✔ fresh Codex invocation isolates config, preserves auth, and uses one initial prompt (5.724ms)
+✔ streaming redaction handles every split position, Unicode, escaped and overlapping secrets (0.898125ms)
+✔ worker environment excludes daemon credentials and schema parsing rejects malformed handoffs (3.467ms)
+✔ CLI qualification checks installed help before any model run and rejects missing flags (674.395042ms)
+✔ independent MCP peers consult over A2A, publish in one checkout, and complete with a traced final barrier (1969.721083ms)
+✔ completion refuses stale coverage, unhandled replies, and a changing validation source (661.6505ms)
+✔ N peers use fresh generations, enforce population/run limits and retain redacted complete output (208.379917ms)
+✔ output capture is attached before asynchronous PID persistence for a short noisy worker (133.287583ms)
+✔ idle peers park at the mesh_yield cursor and see work arriving during exit (110.3045ms)
+✔ completion closing pauses admission while heartbeats continue, then resumes on rejection (230.192042ms)
+✔ run timeout stops and reaps the process before releasing the generation (116.616ms)
+✔ closing preserves already-running peers and waits for mission acceptance without replacement (276.601292ms)
+✔ parked populations honor the hard elapsed limit without repeated idle runs (310.069041ms)
+✔ a slot already parked exits when another slot exhausts the shared run budget (145.18075ms)
+✔ unconfirmed termination quarantines the generation without a replacement or close-wait deadlock (88.870166ms)
+✔ unexpected configured MCP use fails closed with evidence and no replacement (48.594917ms)
+✔ trace-store failures cannot be misclassified as malformed CLI JSON (46.823ms)
+✔ yield preserves work that arrived after the last observation without self-waking on claim release (832.512583ms)
+✔ identical requirement publication preserves revision, author, reviews, and work revision (383.075875ms)
+✔ atomic overlapping claim bundles have one winner; stale generations cannot write (385.650875ms)
+✔ knowledge revisions invalidate transitive dependants and preserve history (361.817084ms)
+✔ trace replay is committed, correlated, complete, and secret-redacted; heartbeats do not wake slots (344.392292ms)
+ℹ tests 22
+ℹ suites 0
+ℹ pass 22
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8364.396625

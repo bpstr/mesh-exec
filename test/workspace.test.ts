@@ -364,6 +364,50 @@ test('cancellation terminates the managed process group and revoked runs cannot 
   }
 });
 
+test('yield drains commands, resumes admission, and cannot undo concurrent supervisor revocation', async () => {
+  const f = await fixture();
+  try {
+    await f.workspace.exec(principal, {
+      operationId: 'yield-command',
+      mode: 'read',
+      argv: [process.execPath, '-e', 'setInterval(()=>{},1024)'],
+    });
+    for (
+      let index = 0;
+      index < 128 && (await f.workspace.operation(principal, 'yield-command')).state !== 'running';
+      index++
+    )
+      await pause(8);
+    await f.workspace.yieldRun(principal.runId, async () => {
+      assert.equal((await f.workspace.operation(principal, 'yield-command')).state, 'cancelled');
+      await assert.rejects(
+        f.workspace.patch(principal, {
+          operationId: 'during-yield',
+          changes: [{ path: 'new.ts', expectedHash: null, content: 'blocked' }],
+        }),
+        (error: any) => error.code === 'run_revoked',
+      );
+    });
+    const resumed = await f.workspace.patch(principal, {
+      operationId: 'after-yield',
+      changes: [{ path: 'new.ts', expectedHash: null, content: 'resumed' }],
+    });
+    assert.equal(resumed.state, 'applied');
+    await f.workspace.yieldRun(principal.runId, async () => {
+      await f.workspace.cancelRun(principal.runId);
+    });
+    await assert.rejects(
+      f.workspace.patch(principal, {
+        operationId: 'after-permanent-revocation',
+        changes: [{ path: 'other.ts', expectedHash: null, content: 'blocked' }],
+      }),
+      (error: any) => error.code === 'run_revoked',
+    );
+  } finally {
+    await f.cleanup();
+  }
+});
+
 test('a final barrier drains full command capacity without deadlocking queued source mutations', async () => {
   const f = await fixture({ maxCommands: 2 });
   try {

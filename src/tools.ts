@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { TaskState } from '@a2a-js/sdk';
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Store, normalizeResource } from './store.js';
@@ -33,6 +34,57 @@ export class MeshTools {
     readonly workspace: Workspace,
     readonly completion: Completion,
   ) {}
+  private async snapshot(
+    p: Principal,
+    input: { query?: string; sinceRevision?: string; waitMs?: number } = {},
+  ) {
+    if (input.sinceRevision && !input.query) {
+      const state = await this.store.waitForRevision(
+        p.missionId,
+        input.sinceRevision,
+        input.waitMs ?? 0,
+      );
+      if (state.workRevision === input.sinceRevision && state.state === 'active')
+        return { unchanged: true, workRevision: state.workRevision };
+    }
+    // Keep the initial revision so a concurrent change triggers the next refresh.
+    const board = (await this.store.board(p, input.query)) as Record<string, any>;
+    const [inbox, reviews, operations, consultations] = await Promise.all([
+      this.a2a.poll(p),
+      this.store.db.query(
+        'SELECT id,agent_id,kind,target_id,target_revision,manifest_hash,coverage_hash,verdict,reasoning FROM reviews WHERE mission_id=$1 ORDER BY created_at DESC,id LIMIT 100',
+        [p.missionId],
+      ),
+      this.store.db.query(
+        `SELECT operation_id,agent_id,kind,state,request->'argv' AS argv,
+         result->'exitCode' AS exit_code,result->'sourceAfter' AS source_after,error
+         FROM workspace_operations WHERE mission_id=$1 ORDER BY updated_at DESC,operation_id LIMIT 50`,
+        [p.missionId],
+      ),
+      this.store.db.query(
+        'SELECT task_id,sender_id,recipient_id,state FROM a2a_tasks WHERE mission_id=$1 AND NOT(state=ANY($2::integer[])) ORDER BY updated_at,task_id LIMIT 100',
+        [
+          p.missionId,
+          [
+            TaskState.TASK_STATE_COMPLETED,
+            TaskState.TASK_STATE_FAILED,
+            TaskState.TASK_STATE_CANCELED,
+            TaskState.TASK_STATE_REJECTED,
+          ],
+        ],
+      ),
+    ]);
+    return {
+      ...board,
+      workRevision: board.mission.revision,
+      inbox,
+      reviews: reviews.rows,
+      operations: operations.rows,
+      consultations: consultations.rows,
+      // Discovery lists are bounded; acceptance checks all records.
+      limits: { reviews: 100, operations: 50, consultations: 100 },
+    };
+  }
   server(p: Principal): McpServer {
     const server = new McpServer(
       { name: 'mesh-exec', version: '0.1.0' },
@@ -99,20 +151,22 @@ export class MeshTools {
         return {
           identity: p,
           roadmap: { path: m.roadmap_path, text: m.roadmap_text, hash: m.roadmap_hash },
-          board: await this.store.board(p),
+          board: await this.snapshot(p),
           checkpoints: checkpoints.rows,
           protocol: { a2a: '1.0', mcp: 'Streamable HTTP' },
-          workflow:
-            'Choose work yourself. Use mesh_poll before dependent work and before exiting. Claim paths, then use mesh_read/mesh_patch. Declare requirement criteria and evidence. Review peers and preserve handoffs.',
         };
       },
     );
     tool(
       'mesh_board',
-      'Inspect current requirements, intentions, claims, knowledge, and peers. Search uses PostgreSQL full text.',
-      { query: z.string().max(400).optional() },
+      'Read shared work, inbox, open consultations, reviews, and reusable operation evidence. sinceRevision suppresses unchanged snapshots; waitMs waits for change. Search filters knowledge only. Lists are bounded; final acceptance checks all records.',
+      {
+        query: z.string().max(400).optional(),
+        sinceRevision: z.string().regex(/^\d+$/).optional(),
+        waitMs: z.number().int().min(0).max(30_000).optional(),
+      },
       true,
-      (a) => this.store.board(p, a.query),
+      (a) => this.snapshot(p, a),
     );
     tool(
       'mesh_find_peers',
@@ -130,7 +184,7 @@ export class MeshTools {
     );
     tool(
       'mesh_claim',
-      'Atomically claim a self-selected resource bundle. Conflicts return current owners; the runner never chooses substitute work.',
+      'Atomically claim repository-relative paths (src/module.ts), subtrees (src/**), or coordination names (resource:integration). Paths have no file: prefix. Conflicts return owners; choose other useful work.',
       {
         id,
         resources: z.array(z.string()).min(1).max(200),
@@ -203,14 +257,32 @@ export class MeshTools {
     );
     tool(
       'mesh_ack',
-      'Explicitly record handling, deferral, rejection, or supersession of one inbox delivery. Reading alone is not acknowledgement.',
+      'Acknowledge handled inbox deliveries. Supply deliveryId or a batch of deliveryIds with the same disposition. Each acknowledgment is idempotent; a failed batch may have applied earlier entries. This does not close consultation tasks.',
       {
-        deliveryId: id,
+        deliveryId: id.optional(),
+        deliveryIds: z.array(id).min(1).max(128).optional(),
         disposition: z.enum(['handled', 'deferred', 'rejected', 'superseded']).optional(),
         reason: text.optional(),
       },
       false,
-      (a) => this.a2a.ack(p, a),
+      async (a) => {
+        invariant(
+          Boolean(a.deliveryId) !== Boolean(a.deliveryIds),
+          'INVALID_ACK',
+          'Supply exactly one of deliveryId or deliveryIds',
+        );
+        if (a.deliveryId) return this.a2a.ack(p, a);
+        const acknowledgments = [];
+        for (const deliveryId of a.deliveryIds)
+          acknowledgments.push(
+            await this.a2a.ack(p, {
+              deliveryId,
+              disposition: a.disposition,
+              reason: a.reason,
+            }),
+          );
+        return { acknowledgments };
+      },
     );
     tool(
       'mesh_remember',
@@ -264,7 +336,7 @@ export class MeshTools {
     );
     tool(
       'mesh_requirement',
-      'Create or revise an agent-interpreted requirement anchored to literal original roadmap text. Criteria are indexed from zero; each needs evidence.',
+      'Create or revise a requirement anchored to literal roadmap text. Criteria are indexed from zero; each needs evidence. An identical update preserves revision and author; real changes invalidate prior reviews.',
       {
         id,
         anchor: z.string().min(1),
@@ -381,8 +453,7 @@ export class MeshTools {
       { reason: z.string().min(1), waitingOn: z.array(id).optional() },
       false,
       async (a) => {
-        await this.workspace.cancelRun(p.runId);
-        return this.store.yield(p, a.reason, a.waitingOn);
+        return this.workspace.yieldRun(p.runId, () => this.store.yield(p, a.reason, a.waitingOn));
       },
     );
     tool(

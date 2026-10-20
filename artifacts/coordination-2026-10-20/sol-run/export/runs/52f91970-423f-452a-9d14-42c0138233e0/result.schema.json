@@ -1,0 +1,43 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "continue",
+        "idle",
+        "blocked",
+        "completion_proposed"
+      ]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "checkpoint_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "waiting_on": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "work_revision": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "outcome",
+    "summary",
+    "checkpoint_id",
+    "waiting_on",
+    "work_revision"
+  ]
+}

@@ -65,6 +65,11 @@ export function normalizeResource(input: string): string {
     );
     return input;
   }
+  invariant(
+    !input.startsWith('file:'),
+    'INVALID_RESOURCE',
+    'File claims use repository-relative paths without a file: prefix; use resource:name only for coordination.',
+  );
   if (input === '.' || input === './**') return '.';
   invariant(
     !input.startsWith('/') && !input.split('/').some((p) => p === '..'),
@@ -726,6 +731,7 @@ export class Store {
         p.agentId,
         JSON.stringify(body),
       ]);
+      await this.changed(tx, p.missionId);
       await this.events({ ...p, kind: 'checkpoint.recorded', data: { id, body } }, tx);
     });
     return { id };
@@ -913,8 +919,15 @@ export class Store {
         'Requirement anchor must appear in the original roadmap',
       );
       invariant(input.criteria.length > 0, 'NO_CRITERIA', 'Acceptance criteria are required');
-      const old = await tx.query<{ revision: number }>(
-        'SELECT revision FROM requirements WHERE mission_id=$1 AND id=$2',
+      const old = await tx.query<{
+        revision: number;
+        anchor: string;
+        title: string;
+        criteria: string[];
+        state: string;
+        evidence: unknown[];
+      }>(
+        'SELECT revision,anchor,title,criteria,state,evidence FROM requirements WHERE mission_id=$1 AND id=$2',
         [p.missionId, input.id],
       );
       invariant(
@@ -928,6 +941,25 @@ export class Store {
         'EVIDENCE_REQUIRED',
         'Implementation needs evidence',
       );
+      const previous = old.rows[0];
+      if (
+        previous &&
+        canonicalJson({
+          anchor: input.anchor,
+          title: input.title,
+          criteria: input.criteria,
+          state: input.state ?? 'open',
+          evidence: input.evidence ?? [],
+        }) ===
+          canonicalJson({
+            anchor: previous.anchor,
+            title: previous.title,
+            criteria: previous.criteria,
+            state: previous.state,
+            evidence: previous.evidence,
+          })
+      )
+        return { id: input.id, revision: previous.revision, unchanged: true };
       await tx.query(
         `INSERT INTO requirements(mission_id,id,revision,anchor,title,criteria,state,author_agent,evidence) VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9::jsonb)
         ON CONFLICT(mission_id,id) DO UPDATE SET revision=$3,anchor=$4,title=$5,criteria=$6::jsonb,state=$7,author_agent=$8,evidence=$9::jsonb,updated_at=now()`,

@@ -112,6 +112,23 @@ test('independent MCP peers consult over A2A, publish in one checkout, and compl
   const joined = await f.call(f.ca, 'mesh_join');
   assert.equal(joined.identity.agentId, 'A1');
   assert.match(joined.roadmap.text, /counter/);
+  assert.equal(joined.board.inbox.messages.length, 0);
+  const unchanged = await f.call(f.ca, 'mesh_board', {
+    sinceRevision: joined.board.workRevision,
+    waitMs: 5,
+  });
+  assert.deepEqual(unchanged, { unchanged: true, workRevision: joined.board.workRevision });
+  const waiting = f.call(f.ca, 'mesh_board', {
+    sinceRevision: unchanged.workRevision,
+    waitMs: 2000,
+  });
+  await f.call(f.cb, 'mesh_checkpoint', { body: { summary: 'Available for independent review' } });
+  const refreshed = await waiting;
+  assert.notEqual(refreshed.workRevision, unchanged.workRevision);
+  assert.equal(
+    refreshed.peers.find((p: any) => p.id === 'A2').handoff.summary,
+    'Available for independent review',
+  );
   await f.call(f.ca, 'mesh_claim', {
     id: 'claim-counter',
     resources: ['counter.txt'],
@@ -130,7 +147,9 @@ test('independent MCP peers consult over A2A, publish in one checkout, and compl
     text: 'Should zero be represented as "0"?\nPlease inspect the roadmap.',
     kind: 'question',
   });
-  const incoming = await f.call(f.cb, 'mesh_poll');
+  const consultationBoard = await f.call(f.cb, 'mesh_board');
+  assert.equal(consultationBoard.consultations[0].task_id, request.taskId);
+  const incoming = consultationBoard.inbox;
   assert.equal(incoming.messages.length, 1);
   await f.call(f.cb, 'mesh_reply', {
     taskId: request.taskId,
@@ -185,6 +204,14 @@ test('independent MCP peers consult over A2A, publish in one checkout, and compl
     verdict: 'pass',
     reasoning: 'Compared the original roadmap to R1; no requirement is omitted.',
   });
+  const reviewed = await f.call(f.ca, 'mesh_board');
+  assert.equal(reviewed.reviews.length, 2);
+  assert.equal(
+    reviewed.operations.find((op: any) => op.operation_id === 'write-counter').state,
+    'applied',
+  );
+  assert.equal(reviewed.consultations.length, 0);
+  assert.equal(reviewed.inbox.messages.length, 0);
   await f.call(f.ca, 'mesh_yield', { reason: 'Implementation ready for final verification' });
   const proposal = await f.call(f.ca, 'mesh_propose_completion', {
     operationId: 'finish-1',
@@ -223,6 +250,84 @@ test('independent MCP peers consult over A2A, publish in one checkout, and compl
     /Should zero be represented/,
   );
   assert.match(await readFile(join(exportDir, 'messages.json'), 'utf8'), /starts at zero/);
+});
+
+test('yield releases claims without ending a live peer; corrected path claims can publish', async (t) => {
+  const f = await fixture();
+  t.after(f.close);
+  await assert.rejects(
+    f.call(f.ca, 'mesh_claim', {
+      id: 'bad-path',
+      resources: ['file:counter.txt'],
+      description: 'Write counter',
+    }),
+    /INVALID_RESOURCE.*without a file: prefix/,
+  );
+  await f.call(f.ca, 'mesh_claim', {
+    id: 'first',
+    resources: ['counter.txt'],
+    description: 'Write counter',
+  });
+  await f.call(f.ca, 'mesh_yield', { reason: 'Release initial contribution' });
+  await assert.rejects(
+    f.call(f.ca, 'mesh_patch', {
+      operationId: 'without-reclaim',
+      changes: [{ path: 'counter.txt', expectedHash: null, content: '0\n' }],
+    }),
+    /CLAIM_REQUIRED/,
+  );
+  await f.call(f.ca, 'mesh_claim', {
+    id: 'correction',
+    resources: ['counter.txt'],
+    description: 'Correct source before final review',
+  });
+  const result = await f.call(f.ca, 'mesh_patch', {
+    operationId: 'after-reclaim',
+    claimId: 'correction',
+    changes: [{ path: 'counter.txt', expectedHash: null, content: '0\n' }],
+  });
+  assert.equal(result.state, 'applied');
+  await f.daemon.workspace.cancelRun(f.a.principal.runId);
+  await assert.rejects(
+    f.call(f.ca, 'mesh_patch', {
+      operationId: 'after-revocation',
+      claimId: 'correction',
+      changes: [{ path: 'counter.txt', expectedHash: result.result.files[0].hash, content: '1\n' }],
+    }),
+    /run_revoked/,
+  );
+});
+
+test('batched acknowledgments preserve task state and safely replay after a partial failure', async (t) => {
+  const f = await fixture();
+  t.after(f.close);
+  await f.call(f.ca, 'mesh_send', {
+    recipientId: 'A2',
+    messageId: 'first',
+    text: 'Inspect source',
+  });
+  await f.call(f.ca, 'mesh_send', {
+    recipientId: 'A2',
+    messageId: 'second',
+    text: 'Inspect coverage',
+  });
+  const board = await f.call(f.cb, 'mesh_board');
+  const deliveryIds = board.inbox.messages.map((m: any) => m.deliveryId);
+  assert.equal(deliveryIds.length, 2);
+  await assert.rejects(
+    f.call(f.cb, 'mesh_ack', { deliveryId: deliveryIds[0], deliveryIds }),
+    /INVALID_ACK/,
+  );
+  await assert.rejects(
+    f.call(f.cb, 'mesh_ack', { deliveryIds: [deliveryIds[0], 'missing'] }),
+    /NOT_FOUND/,
+  );
+  const acknowledged = await f.call(f.cb, 'mesh_ack', { deliveryIds });
+  assert.equal(acknowledged.acknowledgments[0].replayed, true);
+  assert.equal(acknowledged.acknowledgments[1].replayed, false);
+  const after = await f.call(f.cb, 'mesh_board');
+  assert.equal(after.inbox.messages.length, 0);
+  assert.equal(after.consultations.length, 2);
 });
 
 test('completion refuses stale coverage, unhandled replies, and a changing validation source', async (t) => {

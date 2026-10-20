@@ -61,6 +61,54 @@ async function setup() {
   return { db, store, mission, a, b, epoch };
 }
 
+test('identical requirement publication preserves revision, author, reviews, and work revision', async (t) => {
+  const s = await setup();
+  t.after(() => s.db.close());
+  const requirement = {
+    id: 'R1',
+    anchor: 'Implement a shared counter.',
+    title: 'Counter',
+    criteria: ['Starts at zero'],
+    state: 'implemented' as const,
+    evidence: [{ criterion: 0, description: 'Inspected source' }],
+  };
+  await s.store.requirement(s.a.principal, requirement);
+  await s.store.review(s.b.principal, {
+    id: 'review',
+    kind: 'requirement',
+    targetId: 'R1',
+    targetRevision: 1,
+    manifestHash: 'a'.repeat(64),
+    verdict: 'pass',
+    reasoning: 'Inspected implementation',
+  });
+  const before = await s.store.observe(s.mission.id);
+  assert.deepEqual(
+    await s.store.requirement(s.b.principal, { ...requirement, expectedRevision: 1 }),
+    { id: 'R1', revision: 1, unchanged: true },
+  );
+  assert.deepEqual(await s.store.observe(s.mission.id), before);
+  const stored = await s.db.query('SELECT author_agent,revision FROM requirements WHERE id=$1', [
+    'R1',
+  ]);
+  assert.equal(stored.rows[0].author_agent, s.a.principal.agentId);
+  assert.equal(stored.rows[0].revision, 1);
+  assert.equal((await s.db.query('SELECT id FROM reviews WHERE target_revision=1')).rowCount, 1);
+  await assert.rejects(
+    s.store.requirement(s.b.principal, { ...requirement, expectedRevision: 2 }),
+    /current requirement revision/,
+  );
+  assert.deepEqual(
+    await s.store.requirement(s.a.principal, {
+      ...requirement,
+      expectedRevision: 1,
+      criteria: ['Starts at one'],
+    }),
+    { id: 'R1', revision: 2 },
+  );
+  assert.notEqual((await s.store.observe(s.mission.id)).workRevision, before.workRevision);
+});
+
 test('atomic overlapping claim bundles have one winner; stale generations cannot write', async (t) => {
   const s = await setup();
   t.after(() => s.db.close());

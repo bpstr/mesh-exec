@@ -266,6 +266,8 @@ test('N peers use fresh generations, enforce population/run limits and retain re
       const base = join(f.options.logRoot, principal.missionId, principal.agentId, principal.runId);
       const stdout = await readFile(join(base, 'stdout.jsonl'), 'utf8');
       const stderr = await readFile(join(base, 'stderr.log'), 'utf8');
+      const schema = JSON.parse(await readFile(join(base, 'result.schema.json'), 'utf8'));
+      assert.ok(schema.required.includes('work_revision'));
       const result = await readFile(join(base, 'result.json'), 'utf8');
       assert.equal(stdout.trim().split('\n').length, 3);
       assert.match(stdout, /🙂 \[REDACTED\]/u);

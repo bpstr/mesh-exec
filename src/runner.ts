@@ -6,6 +6,7 @@ import {
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import {
+  copyFile,
   mkdir,
   open,
   realpath,
@@ -527,6 +528,11 @@ export async function runMesh(options: RunMeshOptions): Promise<RunnerSummary> {
         flag: 'wx',
         mode: 0o600,
       });
+      await copyFile(
+        invocation.schemaPath,
+        join(runDirectory, 'result.schema.json'),
+        constants.COPYFILE_EXCL,
+      );
       const codexHome = resolve(
         environment.CODEX_HOME ?? join(environment.HOME ?? homedir(), '.codex'),
       );

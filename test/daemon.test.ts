@@ -10,7 +10,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { startDaemon } from '../src/daemon.js';
 import { TestDatabase } from './helpers.js';
-import { exportMission, messages, metrics } from '../src/observer.js';
+import { exportMission, messages, metrics, status } from '../src/observer.js';
 import { readEvents } from '../src/trace.js';
 const exec = promisify(execFile);
 
@@ -22,6 +22,37 @@ async function waitForWaitStarted(f: Awaited<ReturnType<typeof fixture>>, count 
   }
   assert.fail('Peer did not enter its wait');
 }
+
+test('usage reports partial receipts, sums turns, and does not count cached input twice', async (t) => {
+  const f = await fixture();
+  t.after(f.close);
+  const initial = (await status(f.db, f.daemon.missionId)).usage as any;
+  assert.equal(initial.runsWithoutUsage, 2);
+  assert.equal(initial.validReceipts, 0);
+  for (const receipt of [
+    { input_tokens: 100, cached_input_tokens: 80, output_tokens: 10 },
+    { input_tokens: 50, cached_input_tokens: 0, output_tokens: 5 },
+    { input_tokens: 1, cached_input_tokens: 2, output_tokens: 0 },
+    { input_tokens: '100', cached_input_tokens: 0, output_tokens: 0 },
+    null,
+  ]) {
+    await f.daemon.store.events({
+      ...f.a.principal,
+      kind: 'codex.turn.completed',
+      data: { event: { type: 'turn.completed', usage: receipt } },
+    });
+  }
+  const partial = (await status(f.db, f.daemon.missionId)).usage as any;
+  assert.deepEqual(partial.reportedTokens, { input: 150, cachedInput: 80, output: 15, total: 165 });
+  assert.equal(partial.runsWithUsage, 1);
+  assert.equal(partial.runsWithoutUsage, 1);
+  assert.equal(partial.validReceipts, 2);
+  assert.equal(partial.invalidReceipts, 3);
+  assert.match(partial.note, /unknown/);
+  const text = await metrics(f.db, f.daemon.missionId);
+  assert.match(text, /mesh_usage_runs\{[^}]+reporting="missing"\} 1/);
+  assert.match(text, /mesh_reported_tokens\{[^}]+kind="total"\} 165/);
+});
 
 test('participation waits keep sessions live, fence expired runs, and allow terminal exit only', async (t) => {
   const f = await fixture();
@@ -382,6 +413,17 @@ test('independent MCP peers consult over A2A, publish in one checkout, and compl
   });
   const reviewed = await f.call(f.ca, 'mesh_board');
   assert.equal(reviewed.reviews.length, 2);
+  assert.equal(reviewed.detail, 'summary');
+  assert.equal(reviewed.requirements[0].evidenceCount, 1);
+  assert.equal(reviewed.requirements[0].evidence, undefined);
+  assert.equal(reviewed.reviews[0].reasoning, undefined);
+  const detailed = await f.call(f.ca, 'mesh_board', {
+    detail: 'full',
+    sinceRevision: reviewed.workRevision,
+  });
+  assert.equal(detailed.detail, 'full');
+  assert.equal(detailed.requirements[0].evidence.length, 1);
+  assert.ok(detailed.reviews.every((review: any) => review.reasoning.length > 0));
   assert.equal(
     reviewed.operations.find((op: any) => op.operation_id === 'write-counter').state,
     'applied',
@@ -392,7 +434,8 @@ test('independent MCP peers consult over A2A, publish in one checkout, and compl
     reason: 'Implementation ready for final verification',
   });
   assert.equal(released.mayExit, false);
-  const acceptanceWait = f.call(f.cb, 'mesh_wait', { waitMs: 2000 });
+  // Final verification spawns a sandboxed process; allow for host startup load.
+  const acceptanceWait = f.call(f.cb, 'mesh_wait', { waitMs: 10_000 });
   await waitForWaitStarted(f, 2);
   const proposal = await f.call(f.ca, 'mesh_propose_completion', {
     operationId: 'finish-1',
@@ -412,7 +455,43 @@ test('independent MCP peers consult over A2A, publish in one checkout, and compl
     'completed',
     JSON.stringify(await f.daemon.completion.status(mission.id, 'finish-1')),
   );
-  assert.equal((await acceptanceWait).mayExit, true);
+  const acceptedParticipation = await acceptanceWait;
+  assert.equal(acceptedParticipation.mayExit, true, JSON.stringify(acceptedParticipation));
+  // Accepted missions retain only terminal status/checkpoint access for a live,
+  // leased generation; normal work and A2A authentication stay closed.
+  assert.equal((await f.call(f.cb, 'mesh_wait')).mayExit, true);
+  const finalBoard = await f.call(f.cb, 'mesh_board');
+  assert.equal(finalBoard.terminal, true);
+  assert.equal(finalBoard.participation.mayExit, true);
+  const finalYield = await f.call(f.cb, 'mesh_yield', { reason: 'Final checkpoint complete' });
+  assert.equal(finalYield.mayExit, true);
+  assert.equal(finalYield.workRevision, finalBoard.workRevision);
+  assert.equal((await f.daemon.store.mission(mission.id)).revision, mission.revision);
+  assert.equal(
+    (await f.call(f.ca, 'mesh_operation', { operationId: 'finish-1' })).state,
+    'completed',
+  );
+  await f.call(f.ca, 'mesh_checkpoint', { body: { summary: 'Acceptance complete' } });
+  assert.deepEqual((await f.daemon.store.mission(mission.id)).acceptance, mission.acceptance);
+  await assert.rejects(
+    f.call(f.ca, 'mesh_claim', {
+      id: 'after-acceptance',
+      resources: ['counter.txt'],
+      description: 'Forbidden new work',
+    }),
+    /STALE_RUN/,
+  );
+  await assert.rejects(
+    f.call(f.ca, 'mesh_operation', { operationId: 'finish-1', cancel: true }),
+    /STALE_RUN/,
+  );
+  await assert.rejects(f.daemon.store.authenticate(f.a.token), /Run is finished/);
+  await f.db.query("UPDATE runs SET lease_expires=now()-interval '1 second' WHERE id=$1", [
+    f.b.principal.runId,
+  ]);
+  await assert.rejects(f.call(f.cb, 'mesh_wait'));
+  await assert.rejects(f.call(f.cb, 'mesh_board'));
+  await assert.rejects(f.call(f.cb, 'mesh_yield', { reason: 'Expired run' }));
   const events = await readEvents(f.db, mission.id, { limit: 2000 });
   assert.ok(events.some((e) => e.kind === 'mission.completed'));
   assert.ok(events.some((e) => e.kind === 'completion.proposal.completed'));

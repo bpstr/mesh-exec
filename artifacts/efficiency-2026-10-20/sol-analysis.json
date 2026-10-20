@@ -1,0 +1,217 @@
+{
+  "missionId": "ceeedb33-848d-4129-a921-6bc37295349f",
+  "missionState": "completed",
+  "peers": {
+    "A1": {
+      "state": "exited",
+      "receipts": [
+        {
+          "input_tokens": 480813,
+          "cached_input_tokens": 443264,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 2375,
+          "reasoning_output_tokens": 21
+        }
+      ],
+      "toolCalls": 26,
+      "resultPresent": true
+    },
+    "A5": {
+      "state": "exited",
+      "receipts": [
+        {
+          "input_tokens": 617575,
+          "cached_input_tokens": 579968,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 2155,
+          "reasoning_output_tokens": 24
+        }
+      ],
+      "toolCalls": 27,
+      "resultPresent": true
+    },
+    "A4": {
+      "state": "exited",
+      "receipts": [
+        {
+          "input_tokens": 633092,
+          "cached_input_tokens": 594816,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1553,
+          "reasoning_output_tokens": 51
+        }
+      ],
+      "toolCalls": 24,
+      "resultPresent": true
+    },
+    "A2": {
+      "state": "exited",
+      "receipts": [
+        {
+          "input_tokens": 723685,
+          "cached_input_tokens": 683904,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 1887,
+          "reasoning_output_tokens": 51
+        }
+      ],
+      "toolCalls": 26,
+      "resultPresent": true
+    },
+    "A3": {
+      "state": "exited",
+      "receipts": [
+        {
+          "input_tokens": 674687,
+          "cached_input_tokens": 635648,
+          "cache_write_input_tokens": 0,
+          "output_tokens": 2701,
+          "reasoning_output_tokens": 22
+        }
+      ],
+      "toolCalls": 27,
+      "resultPresent": true
+    }
+  },
+  "reportedUsage": {
+    "input_tokens": 3129852,
+    "cached_input_tokens": 2937600,
+    "output_tokens": 10671,
+    "total_tokens": 3140523
+  },
+  "runsWithReceipts": 5,
+  "usageNote": "Raw reported receipts only. Missing usage and monetary charges are unknown.",
+  "tools": {
+    "mesh_board": {
+      "calls": 32,
+      "bytes": 163848
+    },
+    "mesh_join": {
+      "calls": 5,
+      "bytes": 39050
+    },
+    "mesh_read": {
+      "calls": 10,
+      "bytes": 25426
+    },
+    "mesh_wait": {
+      "calls": 31,
+      "bytes": 14811
+    },
+    "mesh_operation": {
+      "calls": 5,
+      "bytes": 9310
+    },
+    "mesh_reply": {
+      "calls": 3,
+      "bytes": 8602
+    },
+    "mesh_poll": {
+      "calls": 4,
+      "bytes": 4082
+    },
+    "mesh_send": {
+      "calls": 3,
+      "bytes": 3994
+    },
+    "mesh_patch": {
+      "calls": 4,
+      "bytes": 3192
+    },
+    "mesh_yield": {
+      "calls": 6,
+      "bytes": 1867
+    },
+    "mesh_exec": {
+      "calls": 2,
+      "bytes": 1746
+    },
+    "mesh_checkpoint": {
+      "calls": 11,
+      "bytes": 1320
+    },
+    "mesh_claim": {
+      "calls": 7,
+      "bytes": 878
+    },
+    "mesh_ack": {
+      "calls": 3,
+      "bytes": 525
+    },
+    "mesh_review": {
+      "calls": 2,
+      "bytes": 381
+    },
+    "mesh_propose_completion": {
+      "calls": 1,
+      "bytes": 194
+    },
+    "mesh_requirement": {
+      "calls": 1,
+      "bytes": 116
+    }
+  },
+  "toolCalls": 130,
+  "toolResultBytes": 279342,
+  "messages": 6,
+  "unhandledMessages": 0,
+  "taskStates": {
+    "3": 3
+  },
+  "reviews": 2,
+  "requirements": 1,
+  "eventCounts": {
+    "mission.created": 1,
+    "supervisor.acquired": 1,
+    "supervisor.started": 1,
+    "codex.turn.started": 5,
+    "mission.completed": 1,
+    "supervisor.draining": 1,
+    "codex.turn.completed": 5,
+    "supervisor.ended": 1
+  },
+  "errors": [
+    {
+      "agent": "A1",
+      "tool": "mesh_claim",
+      "error": {
+        "message": "tool call error: tool call failed for `mesh/mesh_claim`\n\nCaused by:\n    Transport send error: Transport [codex_rmcp_client::event_notification_transport::EventNotificationTransport<rmcp::transport::worker::WorkerTransport<rmcp::transport::streamable_http_client::StreamableHttpClientWorker<codex_rmcp_client::http_client_adapter::StreamableHttpClientAdapter>>>] error: Client error: HTTP request failed: http/request failed: error sending request for url (http://127.0.0.1:62402/mcp)"
+      },
+      "result": null
+    },
+    {
+      "agent": "A3",
+      "tool": "mesh_yield",
+      "error": null,
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"error\":\"Run is finished, expired, fenced, or mission admission is closed\",\"code\":\"STALE_RUN\"}"
+          }
+        ],
+        "structured_content": null
+      }
+    },
+    {
+      "agent": "A3",
+      "tool": "mesh_board",
+      "error": null,
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"error\":\"Run is finished, expired, fenced, or mission admission is closed\",\"code\":\"STALE_RUN\"}"
+          }
+        ],
+        "structured_content": null
+      }
+    }
+  ],
+  "boardProjection": {
+    "originalBytes": 146747,
+    "summaryBytes": 139005,
+    "reductionPercent": 5.28,
+    "note": "Deterministic projection of recorded boards, not measured token savings."
+  }
+}

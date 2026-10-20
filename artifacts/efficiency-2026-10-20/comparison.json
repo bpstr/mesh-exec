@@ -1,0 +1,33 @@
+{
+  "supervisorElapsedSeconds": 147.428,
+  "acceptanceSeconds": 130.049,
+  "drainAfterAcceptanceSeconds": 17.379,
+  "toolCallReductionPercent": 22.16,
+  "resultByteReductionPercent": 47.57,
+  "cacheHitPercent": 93.86,
+  "uncachedInputTokens": 192252,
+  "itemTypes": {
+    "agent_message": 19,
+    "mcp_tool_call": 130
+  },
+  "exportMissing": [],
+  "acceptedManifest": "e515958535523b75adb7f5de6ded886915f13713c656f0cccb6256172207eadf",
+  "requirementCriteria": [
+    4
+  ],
+  "proposals": [
+    [
+      "completed",
+      null
+    ]
+  ],
+  "admittedCalls": 127,
+  "missingFields": [
+    "missionId",
+    "exportedAt",
+    "events",
+    "artifacts",
+    "missing",
+    "redaction"
+  ]
+}

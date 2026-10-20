@@ -1,5 +1,19 @@
 # Shared coordination
 
+The board defaults to `detail: "summary"` for routine coordination. Requirements
+retain their criteria, revision, author and state, with `evidenceCount` in place
+of repeated evidence. Passing review reasoning is omitted; objection reasoning
+remains visible. Use `mesh_board` with `detail: "full"` before reviewing evidence
+or investigating review reasoning. This explicit request bypasses
+`sinceRevision` suppression. Durable records and final acceptance use the full
+evidence regardless of the display mode.
+
+After acceptance, a still-leased peer can call `mesh_board` or `mesh_yield`
+to receive terminal participation state. The terminal board has `terminal: true`
+and contains mission state, work revision and participation, without discovery
+lists. Terminal yield is a no-op. Both remain fenced by run identity and lease;
+neither reopens work or changes the accepted revision.
+
 Every mission receives the same [runner instructions](../src/coordination.ts).
 The roadmap supplies product scope and acceptance criteria. It does not need
 agent assignments, a prescribed requirement ID, or a task-specific messaging
@@ -42,6 +56,18 @@ context. A process that has already exited requires the runner's replacement
 path; a durable message alone cannot revive that process. These protocol rules
 guide agents but cannot prevent a crash or an agent ignoring the exit policy.
 The acceptance barrier remains the authority for completion in either case.
+
+After successful acceptance, the runner closes launch admission and drains the
+existing processes for up to `completionGraceMs` (default 30,000 milliseconds),
+capped by the original mission deadline. It keeps leases and output capture
+active so peers can finish their structured handoffs and emit CLI usage receipts.
+`mesh_wait` returns the terminal outcome and `mayExit: true`; `mesh_operation`
+can read an existing result, and `mesh_checkpoint` can save final audit metadata.
+Other tools, including operation cancellation, remain closed. Final checkpoints
+do not change the accepted evidence. Expired or fenced runs cannot use this
+access. A2A messaging is also closed: consultations and acknowledgments must
+already be settled before acceptance. The grace period ends early when every
+peer exits; operator cancellation and existing per-run timeouts still apply.
 
 Checkpoints require a nonempty object. Omitted or malformed bodies are rejected
 at the tool boundary before persistence.

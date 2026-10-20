@@ -66,11 +66,13 @@ export class MeshTools {
       waitMs?: number;
       knowledgeLimit?: number;
       knowledgeCursor?: { updatedAt: string; id: string };
+      detail?: 'summary' | 'full';
     } = {},
   ) {
     if (
       input.sinceRevision &&
       !input.query &&
+      input.detail !== 'full' &&
       !input.knowledgeCursor &&
       input.knowledgeLimit === undefined
     ) {
@@ -112,9 +114,24 @@ export class MeshTools {
     ]);
     return {
       ...board,
+      detail: input.detail ?? 'summary',
+      requirements:
+        input.detail === 'full'
+          ? board.requirements
+          : board.requirements.map(({ evidence, mission_id, updated_at, ...requirement }: any) => ({
+              ...requirement,
+              evidenceCount: evidence.length,
+            })),
       workRevision: board.mission.revision,
       inbox,
-      reviews: reviews.rows,
+      reviews:
+        input.detail === 'full'
+          ? reviews.rows
+          : reviews.rows.map(({ reasoning, ...review }) => ({
+              ...review,
+              // Objections remain actionable even in a summary.
+              ...(review.verdict === 'objection' ? { reasoning } : {}),
+            })),
       operations: operations.rows,
       consultations: consultations.rows,
       participation,
@@ -161,12 +178,41 @@ export class MeshTools {
         },
         async (input) => {
           try {
-            await this.store.assertActive(p, this.store.db, true);
+            const finishing =
+              name === 'mesh_wait' ||
+              name === 'mesh_board' ||
+              name === 'mesh_yield' ||
+              name === 'mesh_checkpoint' ||
+              (name === 'mesh_operation' && !(input as { cancel?: boolean }).cancel);
+            await this.store.assertActive(p, this.store.db, true, finishing);
             const result = await this.store.tracer.span(
               p,
               `tool.${name}`,
               { arguments: input },
-              () => body(input),
+              async () => {
+                // A peer may finish its normal checkpoint/yield sequence just
+                // after acceptance. Report terminal state without mutating it
+                // or entering the now-closed workspace/A2A services.
+                if (name === 'mesh_board' || name === 'mesh_yield') {
+                  const state = await this.store.observe(p.missionId);
+                  if (state.state === 'completed') {
+                    const participation = await this.participation(p);
+                    return name === 'mesh_yield'
+                      ? participation
+                      : {
+                          terminal: true,
+                          mission: {
+                            id: p.missionId,
+                            state: state.state,
+                            revision: state.workRevision,
+                          },
+                          workRevision: state.workRevision,
+                          participation,
+                        };
+                  }
+                }
+                return body(input);
+              },
             );
             return { content: [{ type: 'text', text: JSON.stringify(result ?? { ok: true }) }] };
           } catch (error) {
@@ -235,8 +281,9 @@ export class MeshTools {
     );
     tool(
       'mesh_board',
-      'Read shared work, inbox, open consultations, reviews, and reusable operation evidence. knowledgePage includes counts and nextCursor; pass it as knowledgeCursor with the same query to read older knowledge. sinceRevision suppresses unchanged snapshots except explicit knowledge page requests; waitMs waits for change. Search filters knowledge only. Lists are bounded; final acceptance checks all records.',
+      'Read shared work, inbox, open consultations, reviews, and reusable operation evidence. Default summary omits requirement evidence and passing review reasoning; use detail=full before reviewing evidence or investigating reviews. Full detail bypasses sinceRevision. knowledgePage includes counts and nextCursor; pass it as knowledgeCursor with the same query to read older knowledge. sinceRevision suppresses unchanged snapshots except explicit knowledge page requests; waitMs waits for change. Search filters knowledge only. Lists are bounded; final acceptance checks all records.',
       {
+        detail: z.enum(['summary', 'full']).optional(),
         query: z.string().max(400).optional(),
         sinceRevision: z.string().regex(/^\d+$/).optional(),
         waitMs: z.number().int().min(0).max(30_000).optional(),

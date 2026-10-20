@@ -310,6 +310,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
             ...budget,
             runTimeoutMs:
               numberOption(values['run-minutes'] ?? config.runMinutes, 20, 'run-minutes') * 60_000,
+            completionGraceMs: numberOption(config.completionGraceMs, 30_000, 'completionGraceMs'),
             codexBinary,
             model: values.model ?? (config.model as string | undefined),
             hiddenPaths: [runtimeDir],

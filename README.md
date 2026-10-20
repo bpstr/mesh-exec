@@ -144,6 +144,15 @@ Set `--agents 100 --max-runs 1000` to configure a hundred slots and ten generati
 
 The optional [configuration example](examples/mesh.config.json) uses the same settings in JSON. Explicit command-line values take precedence for the corresponding invocation settings.
 
+After acceptance, existing agents have up to 30 seconds to save final checkpoints,
+emit structured handoffs and report CLI token usage. Set `completionGraceMs` in
+the JSON configuration to change this window. It is capped by the remaining
+mission time; acceptance never extends `--timeout` or `--max-minutes`. New runs
+and workspace work remain closed, and operator cancellation still stops agents
+immediately. A peer that exceeds either deadline is terminated, so a usage receipt
+is only available if the CLI emits it in time. See the
+[offline shutdown validation](artifacts/shutdown-2026-10-20/REPORT.md).
+
 ### Stop and resume
 
 Press `Ctrl-C` to stop admission and terminate managed processes. Budget exhaustion, failure, and operator stop leave a non-completed mission with its durable history available.
@@ -187,4 +196,4 @@ The supported baseline handles inbox messages explicitly at work transitions. Id
 
 The source manifest includes Git-tracked paths and untracked paths that are not ignored, with content hashes, types, and modes. Ignored dependencies, ignored generated outputs, external services, and arbitrary host state are outside that source basis. `mesh_patch` publishes complete UTF-8 file replacements or deletions; it is not a binary-file editing API. All agent writes use the guarded workspace service, and only one daemon owns the checkout. An unrelated host process writing into the checkout is outside this coordination contract.
 
-The automated suite uses PGlite for datastore fixtures, actual local A2A HTTP with the official SDK, real MCP clients, and controlled worker-process substitutes. [CI](https://github.com/bpstr/mesh-exec/actions/workflows/ci.yml) passes 40 tests on Linux with Node 22/24 and PostgreSQL 17, and on macOS with Node 24. Both platforms require real OS confinement tests without skips. The live pilot used Codex CLI 0.160.0 and PostgreSQL 18.6 on macOS; its complete conversations, tool activity, code, usage receipts, and unresolved acceptance state are preserved in the repository. Optional hooks and sustained 10/50/100-agent operation still need qualification.
+The automated suite uses PGlite for datastore fixtures, actual local A2A HTTP with the official SDK, real MCP clients, and controlled worker-process substitutes. [CI](https://github.com/bpstr/mesh-exec/actions/workflows/ci.yml) passes 40 tests on Linux with Node 22/24 and PostgreSQL 17, and on macOS with Node 24. Both platforms require real OS confinement tests without skips. The [five-agent Sol 6.1 sample run](artifacts/efficiency-2026-10-20/REPORT.md) reached acceptance, passed all 12 generated tests, and captured all five final handoffs and usage receipts using Codex CLI 0.160.0 on macOS. Earlier failed runs remain preserved. This supports a bounded real-project pilot; optional hooks, production workloads, and sustained 10/50/100-agent operation still need qualification.

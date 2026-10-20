@@ -1,0 +1,12 @@
+✔ completed mission stops an unresponsive peer at the grace boundary (258.2875ms)
+✔ completed mission stops an unresponsive peer at the elapsed boundary (646.166875ms)
+✔ completed mission stops an unresponsive peer at the external boundary (143.159417ms)
+✔ blocked populations honor the hard elapsed limit without repeated runs (1020.940542ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3567.177916

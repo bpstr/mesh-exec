@@ -1,0 +1,4 @@
+postgres    999 bpstr    5u  IPv4 0x7b920a66369f6b08      0t0  TCP 127.0.0.1:55433 (LISTEN)
+postgres   1018 bpstr    7u  IPv6 0x285b989a1b54bad0      0t0  TCP [::1]:5432 (LISTEN)
+postgres   1018 bpstr    8u  IPv4 0x235bc3c1b13750f8      0t0  TCP 127.0.0.1:5432 (LISTEN)
+Pilot listener 62402 absent. Other task listeners omitted.

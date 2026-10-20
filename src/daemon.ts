@@ -194,7 +194,9 @@ export async function startDaemon(options: DaemonOptions): Promise<RunningDaemon
       next: express.NextFunction,
     ) => {
       try {
-        res.locals.principal = await store.authenticate(bearer(req));
+        // Only MCP has a narrow post-acceptance tool allowlist. A2A/mailbox
+        // authentication retains the active/closing-only policy.
+        res.locals.principal = await store.authenticate(bearer(req), req.path === '/mcp');
         next();
       } catch (error) {
         await store

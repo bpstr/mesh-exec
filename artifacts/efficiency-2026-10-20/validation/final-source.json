@@ -1,0 +1,19 @@
+{
+  "src/schema.ts": "d164323594b38161224629a4945dcd8be4725c2e41d5d73775e88d7d50d1ba9d",
+  "src/daemon.ts": "b4b534a67fe70b3ccb73d6b243d6d6f241fb854fbb5630e60b6a40732963a930",
+  "src/coordination.ts": "9f8e9eaf97e728374e12b195ddb871f0cc70da8894879e4fb3efe329f42c09c9",
+  "src/workspace.ts": "e93b5ce21d775b8613c478dea8d25198a3c4e2d95e1d1505dd7ec11cd28b66e8",
+  "src/cli.ts": "4d59e40edd971385841335a8823a0f637d99b4d4568ebc47645de8d328f7b30e",
+  "src/sandbox.ts": "4cd6f7e66bc2ade6f53bd72695ce512d28b6d55c66440cf038376a4309568073",
+  "src/types.ts": "0cd8012f64ee512de963ca9f047a3bf932254eba47ea5ceea28263237affd623",
+  "src/tools.ts": "3401a0c9fab511b3b5a005f9b29bf69388e46dbf6b1c219d43ecf111cbcb7bc6",
+  "src/codex.ts": "8b2b5fee7a5b2f4b2ce1beb88ba9df37d94abfa414f042e8dea35d613d329b49",
+  "src/completion.ts": "1f0afa5be6d4fe111f7bbf90cfe6f442db40cd614c080f3e159127664b58ab1f",
+  "src/mailbox-hook.ts": "1c56ebf2f1a81b117c4452f82c266303c73a999ccd24713db489edb81c4999ad",
+  "src/runner.ts": "f5947e14d12d5558a7323fbfd7d27fc8c3b6cd5409a2289c4240ce6f3db8d0dd",
+  "src/db.ts": "ff962b2a86e3fa94780683b9cfa5637d64f6efce7e4ef089ba666f80eec4a62b",
+  "src/trace.ts": "4ac50a715255d8412a3b579cc2039254560990937f43b5c7d8d51bdbc4db704b",
+  "src/store.ts": "2cce0404cbd5952381d3abdff4c757a95bf752f0371962d158494277eecc0c5f",
+  "src/a2a.ts": "259acb5dec642be70b230ec6605a8e3f5b01b874e110b9489e77aedf8a22c145",
+  "src/observer.ts": "c8a0ca185211c7b34be0462bcaff76932176379c84982ccba2caf41fd1b5295f"
+}

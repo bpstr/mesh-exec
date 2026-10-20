@@ -1,0 +1,13 @@
+{
+  "removedPath": "/private/tmp/mesh-exec-efficiency-20261020/candidate/dist",
+  "removedFileBytes": 600205,
+  "freeBytesBefore": 51194044416,
+  "freeBytesAfter": 51194769408,
+  "freeGiBAfter": 47.68,
+  "pilotPid": 65109,
+  "pilotPort": 62402,
+  "pilotPurpose": "One authorized five-Sol slugifier run",
+  "pilotLog": "/Users/bpstr/Github/mesh-exec/artifacts/efficiency-2026-10-20/sol-console.log",
+  "preserved": "Candidate source, runtime evidence, generated checkout, current dist, PostgreSQL listeners on 5432 and 55433, active Assign/Claude services and browsers",
+  "scope": "No model process or pilot listener remains; no broad cleanup."
+}

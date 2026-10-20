@@ -1,0 +1,179 @@
+{
+  "tools": {
+    "mesh_board": {
+      "calls": 33,
+      "bytes": 378604,
+      "max": 19473
+    },
+    "mesh_read": {
+      "calls": 14,
+      "bytes": 39123,
+      "max": 5169
+    },
+    "mesh_join": {
+      "calls": 5,
+      "bytes": 37815,
+      "max": 7563
+    },
+    "mesh_wait": {
+      "calls": 34,
+      "bytes": 22011,
+      "max": 3541
+    },
+    "mesh_reply": {
+      "calls": 9,
+      "bytes": 18354,
+      "max": 3249
+    },
+    "mesh_send": {
+      "calls": 10,
+      "bytes": 13529,
+      "max": 2242
+    },
+    "mesh_operation": {
+      "calls": 4,
+      "bytes": 4806,
+      "max": 2164
+    },
+    "mesh_cancel": {
+      "calls": 2,
+      "bytes": 3560,
+      "max": 1789
+    },
+    "mesh_patch": {
+      "calls": 4,
+      "bytes": 3312,
+      "max": 881
+    },
+    "mesh_review": {
+      "calls": 13,
+      "bytes": 2425,
+      "max": 199
+    },
+    "mesh_ack": {
+      "calls": 7,
+      "bytes": 1927,
+      "max": 514
+    },
+    "mesh_exec": {
+      "calls": 2,
+      "bytes": 1780,
+      "max": 893
+    },
+    "mesh_yield": {
+      "calls": 5,
+      "bytes": 1692,
+      "max": 339
+    },
+    "mesh_claim": {
+      "calls": 7,
+      "bytes": 1542,
+      "max": 411
+    },
+    "mesh_requirement": {
+      "calls": 8,
+      "bytes": 886,
+      "max": 112
+    },
+    "mesh_checkpoint": {
+      "calls": 7,
+      "bytes": 840,
+      "max": 120
+    },
+    "mesh_propose_completion": {
+      "calls": 3,
+      "bytes": 579,
+      "max": 194
+    }
+  },
+  "boardFieldBytes": {
+    "mission": 8113,
+    "requirements": 112460,
+    "intentions": 66,
+    "claims": 14654,
+    "knowledge": 66,
+    "knowledgePage": 5346,
+    "peers": 54513,
+    "workRevision": 127,
+    "inbox": 10196,
+    "reviews": 108431,
+    "operations": 27160,
+    "consultations": 6182,
+    "participation": 8410,
+    "limits": 1848
+  },
+  "failures": [
+    {
+      "tool": "mesh_review",
+      "error": null,
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"error\":\"Requirement revision does not exist\",\"code\":\"STALE_REVIEW\"}"
+          }
+        ],
+        "structured_content": null
+      }
+    },
+    {
+      "tool": "mesh_review",
+      "error": null,
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"error\":\"Requirement revision does not exist\",\"code\":\"STALE_REVIEW\"}"
+          }
+        ],
+        "structured_content": null
+      }
+    },
+    {
+      "tool": "mesh_wait",
+      "error": {
+        "message": "tool call error: tool call failed for `mesh/mesh_wait`\n\nCaused by:\n    Transport send error: Transport [codex_rmcp_client::event_notification_transport::EventNotificationTransport<rmcp::transport::worker::WorkerTransport<rmcp::transport::streamable_http_client::StreamableHttpClientWorker<codex_rmcp_client::http_client_adapter::StreamableHttpClientAdapter>>>] error: unexpected server response: HTTP 401: {\"error\":\"A current mesh run credential is required\"}"
+      },
+      "result": null
+    },
+    {
+      "tool": "mesh_send",
+      "error": null,
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"error\":\"Peer delivery failed: {\\\"name\\\":\\\"UnsupportedOperationError\\\",\\\"message\\\":\\\"A terminal task cannot receive another message.\\\"}. Outbox: 57f64099-9275-4973-a9d4-ba8dfdc56e10\",\"code\":\"DELIVERY_FAILED\"}"
+          }
+        ],
+        "structured_content": null
+      }
+    },
+    {
+      "tool": "mesh_reply",
+      "error": null,
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"error\":\"messageId was already used with a different payload.\"}"
+          }
+        ],
+        "structured_content": null
+      }
+    },
+    {
+      "tool": "mesh_reply",
+      "error": null,
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"error\":\"A terminal task cannot receive another reply.\"}"
+          }
+        ],
+        "structured_content": null
+      }
+    }
+  ]
+}

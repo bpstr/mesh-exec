@@ -1,0 +1,95 @@
+✔ explicit timeout keeps the population running until its deadline unless a cap is supplied (1.547291ms)
+✔ invalid and overflowing timeouts fail instead of scheduling an immediate timer (0.178208ms)
+✔ participation waits keep sessions live, fence expired runs, and allow terminal exit only (2419.677ms)
+✔ checkpoint body is required and malformed checkpoints do not reach persistence (954.673083ms)
+✔ board knowledge pagination bypasses unchanged snapshots and retains search filters (731.16325ms)
+✔ discussion profile exposes only communication tools and gives each peer one partner (1104.841167ms)
+✔ permanent delivery failure is a tool error and a failed span, not a successful receipt (853.514625ms)
+✔ independent MCP peers consult over A2A, publish in one checkout, and complete with a traced final barrier (6134.308792ms)
+✔ yield releases claims without ending a live peer; corrected path claims can publish (4530.995708ms)
+✔ batched acknowledgments preserve task state and safely replay after a partial failure (2640.110084ms)
+✔ completion refuses stale coverage, unhandled replies, and a changing validation source (2017.771458ms)
+✔ N peers use fresh generations, enforce population/run limits and retain redacted complete output (429.909083ms)
+✔ output capture is attached before asynchronous PID persistence for a short noisy worker (144.533875ms)
+✔ idle exits replace every slot without a work revision and stop at the elapsed limit (1556.052041ms)
+✔ blocked peers park at the mesh_yield cursor and see work arriving during exit (130.730667ms)
+✔ completion closing pauses admission while heartbeats continue, then resumes on rejection (456.556667ms)
+✔ run timeout stops and reaps the process before releasing the generation (137.608542ms)
+✔ closing preserves already-running peers and waits for mission acceptance without replacement (350.428792ms)
+✔ acceptance drains existing peers, retains handoffs and usage, and never replaces them (313.72975ms)
+✖ completed mission stops an unresponsive peer at the grace boundary (5439.06175ms)
+✖ completed mission stops an unresponsive peer at the elapsed boundary (822.229958ms)
+✖ completed mission stops an unresponsive peer at the external boundary (5207.669084ms)
+✖ blocked populations honor the hard elapsed limit without repeated runs (595.540458ms)
+✔ a slot already parked exits when another slot exhausts the shared run budget (350.216583ms)
+✔ unconfirmed termination quarantines the generation without a replacement or close-wait deadlock (97.022833ms)
+✔ unexpected configured MCP use fails closed with evidence and no replacement (60.763666ms)
+✔ trace-store failures cannot be misclassified as malformed CLI JSON (70.481ms)
+✔ yield preserves work that arrived after the last observation without self-waking on claim release (1679.161209ms)
+✔ knowledge pages retain old resolved findings and paginate timestamp ties without loss (1278.980541ms)
+✔ identical requirement publication preserves revision, author, reviews, and work revision (1363.301ms)
+✔ atomic overlapping claim bundles have one winner; stale generations cannot write (693.257708ms)
+✔ knowledge revisions invalidate transitive dependants and preserve history (681.767416ms)
+✔ trace replay is committed, correlated, complete, and secret-redacted; heartbeats do not wake slots (564.258708ms)
+ℹ tests 33
+ℹ suites 0
+ℹ pass 29
+ℹ fail 4
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 47906.698583
+
+✖ failing tests:
+
+test at test/runner.test.ts:28:9403
+✖ completed mission stops an unresponsive peer at the grace boundary (5439.06175ms)
+  AssertionError [ERR_ASSERTION]: must not wait for the five-second grace
+      at TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/runner.test.ts:495:14)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at test/runner.test.ts:28:9403
+✖ completed mission stops an unresponsive peer at the elapsed boundary (822.229958ms)
+  TypeError: Cannot read properties of undefined (reading 'data')
+      at TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/runner.test.ts:505:74)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at test/runner.test.ts:28:9403
+✖ completed mission stops an unresponsive peer at the external boundary (5207.669084ms)
+  AssertionError [ERR_ASSERTION]: must not wait for the five-second grace
+      at TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/runner.test.ts:495:14)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at test/runner.test.ts:28:10718
+✖ blocked populations honor the hard elapsed limit without repeated runs (595.540458ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+  
+    assert.ok(f.events.some((event) => event.kind === 'slot.parked'))
+  
+      at TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/runner.test.ts:525:12)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

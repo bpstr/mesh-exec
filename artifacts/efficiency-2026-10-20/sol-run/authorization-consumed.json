@@ -1,0 +1,14 @@
+{
+  "model": "gpt-6.1-sol",
+  "agents": 5,
+  "maxLaunches": 5,
+  "maxToolCalls": null,
+  "maxElapsedMs": 300000,
+  "replacements": false,
+  "retries": false,
+  "stop": "mission completion, first provider error, five-minute cutoff",
+  "authorization": "User approved this one bounded sol6.1 run on the unchanged original slugifier task: five worker launches, five minutes total, no replacements or retries, stop on acceptance or first provider error. Bounded existing-peer completion drain uses the original deadline. Codex subscription usage, no API keys.",
+  "startedAt": "2026-10-20T18:46:01.232Z",
+  "runnerCommit": "bf8e10c1d145a4dc7cca9ad762d1b071883e2956",
+  "codexVersion": "codex-cli 0.163.0-alpha.10.2"
+}

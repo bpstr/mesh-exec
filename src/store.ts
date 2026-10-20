@@ -207,7 +207,12 @@ export class Store {
     });
     return this.mission(id);
   }
-  async assertActive(p: Principal, tx: Sql = this.db, allowClosing = false): Promise<void> {
+  async assertActive(
+    p: Principal,
+    tx: Sql = this.db,
+    allowClosing = false,
+    allowCompleted = false,
+  ): Promise<void> {
     const r = await tx.query(
       `SELECT r.id FROM runs r JOIN slots s ON s.mission_id=r.mission_id AND s.id=r.agent_id JOIN missions m ON m.id=r.mission_id
       WHERE r.id=$1 AND r.mission_id=$2 AND r.agent_id=$3 AND r.generation=$4 AND s.generation=r.generation AND s.active_run_id=r.id
@@ -218,7 +223,7 @@ export class Store {
         p.missionId,
         p.agentId,
         p.generation,
-        allowClosing ? ['active', 'closing'] : ['active'],
+        ['active', ...(allowClosing ? ['closing'] : []), ...(allowCompleted ? ['completed'] : [])],
       ],
     );
     invariant(
@@ -227,7 +232,7 @@ export class Store {
       'Run is finished, expired, fenced, or mission admission is closed',
     );
   }
-  async authenticate(token: string): Promise<Principal> {
+  async authenticate(token: string, allowCompleted = false): Promise<Principal> {
     invariant(
       token.length >= 32 && token.length <= 1024,
       'UNAUTHORIZED',
@@ -247,7 +252,7 @@ export class Store {
       runId: row.id,
       generation: row.generation,
     };
-    await this.assertActive(p, this.db, true);
+    await this.assertActive(p, this.db, true, allowCompleted);
     return p;
   }
   async acquireSupervisor(input: {
@@ -745,7 +750,8 @@ export class Store {
   async checkpoint(p: Principal, body: unknown, id = randomUUID()): Promise<{ id: string }> {
     await this.db.transaction(async (tx) => {
       await this.lock(tx, p.missionId);
-      await this.assertActive(p, tx);
+      // Final audit metadata may be saved during the bounded completion drain.
+      await this.assertActive(p, tx, false, true);
       const prior = await tx.query<{ body: unknown; run_id: string }>(
         'SELECT body,run_id FROM checkpoints WHERE id=$1',
         [id],

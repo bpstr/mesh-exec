@@ -1,0 +1,2 @@
+# Keep complete validation output alongside the report.
+!validation/*.log

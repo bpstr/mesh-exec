@@ -1,0 +1,8 @@
+{
+  "missionId": "04cb49b8-98bd-4f47-b7e7-48b548108472",
+  "supervisorId": "f0943e4b-a670-49d4-ac9d-d5ebaee4820c",
+  "epoch": 1,
+  "runsStarted": 5,
+  "runsFinished": 5,
+  "state": "stopped"
+}

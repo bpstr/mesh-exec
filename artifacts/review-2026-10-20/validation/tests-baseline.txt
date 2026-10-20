@@ -1,0 +1,357 @@
+
+> mesh-exec@0.1.0 test
+> node --import tsx --test --test-concurrency=1 test/*.test.ts
+
+✔ independent A2A SDK client, durable replies, participant scope, and complete message trace (1011.146958ms)
+✔ outbox retries survive a lost response and retired sender without duplicate tasks (398.933709ms)
+✔ concurrent duplicate sends produce one task, and an ingress trace failure rolls back acceptance (439.026292ms)
+✔ default SendMessage waits, list pagination is scoped, and unsupported streaming is explicit (661.707166ms)
+✔ fresh Codex invocation isolates config, preserves auth, and uses one initial prompt (4.19875ms)
+✔ streaming redaction handles every split position, Unicode, escaped and overlapping secrets (0.975708ms)
+✔ worker environment excludes daemon credentials and schema parsing rejects malformed handoffs (0.500583ms)
+✔ CLI qualification checks installed help before any model run and rejects missing flags (552.301834ms)
+✖ independent MCP peers consult over A2A, publish in one checkout, and complete with a traced final barrier (776.434833ms)
+✖ completion refuses stale coverage, unhandled replies, and a changing validation source (441.2935ms)
+✔ hook notices contain bounded identifiers only and preserve event kind (0.800459ms)
+✔ mailbox hook authenticates a bounded GET and never acknowledges or consumes messages (11.721166ms)
+✔ hook failure emits a fixed fallback without reflecting input or secrets (1.917375ms)
+✖ N peers use fresh generations, enforce population/run limits and retain redacted complete output (22.281875ms)
+✖ output capture is attached before asynchronous PID persistence for a short noisy worker (3.30125ms)
+✖ idle peers park at the mesh_yield cursor and see work arriving during exit (5.196958ms)
+✖ completion closing pauses admission while heartbeats continue, then resumes on rejection (114.091333ms)
+✖ run timeout stops and reaps the process before releasing the generation (4.572042ms)
+✖ closing preserves already-running peers and waits for mission acceptance without replacement (213.184292ms)
+✖ parked populations honor the hard elapsed limit without repeated idle runs (117.270459ms)
+✔ a slot already parked exits when another slot exhausts the shared run budget (5.987417ms)
+✖ unconfirmed termination quarantines the generation without a replacement or close-wait deadlock (9.261125ms)
+✖ unexpected configured MCP use fails closed with evidence and no replacement (9.083542ms)
+✖ trace-store failures cannot be misclassified as malformed CLI JSON (9.424042ms)
+✔ yield preserves work that arrived after the last observation without self-waking on claim release (720.037792ms)
+✔ atomic overlapping claim bundles have one winner; stale generations cannot write (409.918083ms)
+✔ knowledge revisions invalidate transitive dependants and preserve history (398.686625ms)
+✔ trace replay is committed, correlated, complete, and secret-redacted; heartbeats do not wake slots (399.353166ms)
+✖ competing writes, stale dependencies, idempotency, and symlink escapes are rejected without losing content (696.615417ms)
+✖ the operating-system flock excludes another daemon, and releasing it permits restart (443.513792ms)
+✖ a failed prepared-record transaction never publishes a file (372.491583ms)
+✖ restart reconciles a partial journal and refuses an unexpected external edit (363.760792ms)
+✖ command retries run once and full output survives bounded, redacted previews (358.416875ms)
+✖ source mutators block coherent reads and final verification retains the gate through acceptance (345.465416ms)
+✖ cancellation terminates the managed process group and revoked runs cannot publish (341.383625ms)
+✖ a final barrier drains full command capacity without deadlocking queued source mutations (343.778625ms)
+✖ an admission delayed by sandbox qualification cannot cross a final barrier (345.899833ms)
+﹣ real bubblewrap forbids source writes and does not silently fall back (0.473ms) # Host namespace support unavailable: The enforced worker boundary currently requires Linux and bubblewrap.
+ℹ tests 38
+ℹ suites 0
+ℹ pass 16
+ℹ fail 21
+ℹ cancelled 0
+ℹ skipped 1
+ℹ todo 0
+ℹ duration_ms 11969.263833
+
+✖ failing tests:
+
+test at test/daemon.test.ts:1:2543
+✖ independent MCP peers consult over A2A, publish in one checkout, and complete with a traced final barrier (776.434833ms)
+  Error [MeshError]: Workspace writer locking currently requires Linux.
+      at invariant (/Users/bpstr/Github/mesh-exec/src/types.ts:52:21)
+      at Workspace.open (/Users/bpstr/Github/mesh-exec/src/workspace.ts:290:5)
+      at startDaemon (/Users/bpstr/Github/mesh-exec/src/daemon.ts:76:37)
+      at async fixture (/Users/bpstr/Github/mesh-exec/test/daemon.test.ts:28:18)
+      at async TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/daemon.test.ts:102:13)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    code: 'unsupported_platform',
+    details: undefined
+  }
+
+test at test/daemon.test.ts:1:6630
+✖ completion refuses stale coverage, unhandled replies, and a changing validation source (441.2935ms)
+  Error [MeshError]: Workspace writer locking currently requires Linux.
+      at invariant (/Users/bpstr/Github/mesh-exec/src/types.ts:52:21)
+      at Workspace.open (/Users/bpstr/Github/mesh-exec/src/workspace.ts:290:5)
+      at startDaemon (/Users/bpstr/Github/mesh-exec/src/daemon.ts:76:37)
+      at async fixture (/Users/bpstr/Github/mesh-exec/test/daemon.test.ts:28:18)
+      at async TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/daemon.test.ts:227:13)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    code: 'unsupported_platform',
+    details: undefined
+  }
+
+test at test/runner.test.ts:28:2211
+✖ N peers use fresh generations, enforce population/run limits and retain redacted complete output (22.281875ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  0 !== 3
+  
+      at TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/runner.test.ts:261:12)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 3,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/runner.test.ts:28:3843
+✖ output capture is attached before asynchronous PID persistence for a short noisy worker (3.30125ms)
+  Error: ENOENT: no such file or directory, open '/var/folders/6z/mkvyjszn7hq7x9r0df5zfyw80000gn/T/mesh-runner-Fe8y9y/runtime/runs/mission-test/A1/A1-run-1/stdout.jsonl'
+      at async open (node:internal/fs/promises:697:25)
+      at async readFile (node:internal/fs/promises:1348:14)
+      at async TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/runner.test.ts:295:20)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    errno: -2,
+    code: 'ENOENT',
+    syscall: 'open',
+    path: '/var/folders/6z/mkvyjszn7hq7x9r0df5zfyw80000gn/T/mesh-runner-Fe8y9y/runtime/runs/mission-test/A1/A1-run-1/stdout.jsonl'
+  }
+
+test at test/runner.test.ts:28:4404
+✖ idle peers park at the mesh_yield cursor and see work arriving during exit (5.196958ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  undefined !== '1'
+  
+      at TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/runner.test.ts:321:12)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: '1',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/runner.test.ts:28:4841
+✖ completion closing pauses admission while heartbeats continue, then resumes on rejection (114.091333ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+  
+    assert.ok(f.store.ends.every((run) => run.end.status === 'exited'))
+  
+      at TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/runner.test.ts:346:12)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at test/runner.test.ts:28:5526
+✖ run timeout stops and reaps the process before releasing the generation (4.572042ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'failed'
+  - 'timed-out'
+  
+      at TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/runner.test.ts:359:12)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'failed',
+    expected: 'timed-out',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/runner.test.ts:28:5982
+✖ closing preserves already-running peers and waits for mission acceptance without replacement (213.184292ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+  
+    assert.ok(f.store.ends.every((run) => run.end.status === 'exited'))
+  
+      at TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/runner.test.ts:385:12)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at test/runner.test.ts:28:6671
+✖ parked populations honor the hard elapsed limit without repeated idle runs (117.270459ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  8 !== 1
+  
+      at TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/runner.test.ts:400:12)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 8,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/runner.test.ts:28:7446
+✖ unconfirmed termination quarantines the generation without a replacement or close-wait deadlock (9.261125ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/runner.test.ts:429:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /termination_unconfirmed/u,
+    operator: 'rejects',
+    diff: 'simple'
+  }
+
+test at test/runner.test.ts:28:7938
+✖ unexpected configured MCP use fails closed with evidence and no replacement (9.083542ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/runner.test.ts:442:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /Unexpected MCP server/u,
+    operator: 'rejects',
+    diff: 'simple'
+  }
+
+test at test/runner.test.ts:28:8331
+✖ trace-store failures cannot be misclassified as malformed CLI JSON (9.424042ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/runner.test.ts:460:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /trace-store-broken/u,
+    operator: 'rejects',
+    diff: 'simple'
+  }
+
+test at test/workspace.test.ts:1:2258
+✖ competing writes, stale dependencies, idempotency, and symlink escapes are rejected without losing content (696.615417ms)
+  Error [MeshError]: Workspace writer locking currently requires Linux.
+      at invariant (/Users/bpstr/Github/mesh-exec/src/types.ts:52:21)
+      at Workspace.open (/Users/bpstr/Github/mesh-exec/src/workspace.ts:290:5)
+      at fixture (/Users/bpstr/Github/mesh-exec/test/workspace.test.ts:68:37)
+      at async TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/workspace.test.ts:96:13)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    code: 'unsupported_platform',
+    details: undefined
+  }
+
+test at test/workspace.test.ts:1:4389
+✖ the operating-system flock excludes another daemon, and releasing it permits restart (443.513792ms)
+  Error [MeshError]: Workspace writer locking currently requires Linux.
+      at invariant (/Users/bpstr/Github/mesh-exec/src/types.ts:52:21)
+      at Workspace.open (/Users/bpstr/Github/mesh-exec/src/workspace.ts:290:5)
+      at fixture (/Users/bpstr/Github/mesh-exec/test/workspace.test.ts:68:37)
+      at async TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/workspace.test.ts:165:13)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    code: 'unsupported_platform',
+    details: undefined
+  }
+
+test at test/workspace.test.ts:1:4736
+✖ a failed prepared-record transaction never publishes a file (372.491583ms)
+  Error [MeshError]: Workspace writer locking currently requires Linux.
+      at invariant (/Users/bpstr/Github/mesh-exec/src/types.ts:52:21)
+      at Workspace.open (/Users/bpstr/Github/mesh-exec/src/workspace.ts:290:5)
+      at fixture (/Users/bpstr/Github/mesh-exec/test/workspace.test.ts:68:37)
+      at async TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/workspace.test.ts:180:13)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    code: 'unsupported_platform',
+    details: undefined
+  }
+
+test at test/workspace.test.ts:1:5446
+✖ restart reconciles a partial journal and refuses an unexpected external edit (363.760792ms)
+  Error [MeshError]: Workspace writer locking currently requires Linux.
+      at invariant (/Users/bpstr/Github/mesh-exec/src/types.ts:52:21)
+      at Workspace.open (/Users/bpstr/Github/mesh-exec/src/workspace.ts:290:5)
+      at fixture (/Users/bpstr/Github/mesh-exec/test/workspace.test.ts:68:37)
+      at async TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/workspace.test.ts:204:13)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    code: 'unsupported_platform',
+    details: undefined
+  }
+
+test at test/workspace.test.ts:3:799
+✖ command retries run once and full output survives bounded, redacted previews (358.416875ms)
+  Error [MeshError]: Workspace writer locking currently requires Linux.
+      at invariant (/Users/bpstr/Github/mesh-exec/src/types.ts:52:21)
+      at Workspace.open (/Users/bpstr/Github/mesh-exec/src/workspace.ts:290:5)
+      at fixture (/Users/bpstr/Github/mesh-exec/test/workspace.test.ts:68:37)
+      at async TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/workspace.test.ts:250:13)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    code: 'unsupported_platform',
+    details: undefined
+  }
+
+test at test/workspace.test.ts:3:2241
+✖ source mutators block coherent reads and final verification retains the gate through acceptance (345.465416ms)
+  Error [MeshError]: Workspace writer locking currently requires Linux.
+      at invariant (/Users/bpstr/Github/mesh-exec/src/types.ts:52:21)
+      at Workspace.open (/Users/bpstr/Github/mesh-exec/src/workspace.ts:290:5)
+      at fixture (/Users/bpstr/Github/mesh-exec/test/workspace.test.ts:68:37)
+      at async TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/workspace.test.ts:280:13)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    code: 'unsupported_platform',
+    details: undefined
+  }
+
+test at test/workspace.test.ts:3:3778
+✖ cancellation terminates the managed process group and revoked runs cannot publish (341.383625ms)
+  Error [MeshError]: Workspace writer locking currently requires Linux.
+      at invariant (/Users/bpstr/Github/mesh-exec/src/types.ts:52:21)
+      at Workspace.open (/Users/bpstr/Github/mesh-exec/src/workspace.ts:290:5)
+      at fixture (/Users/bpstr/Github/mesh-exec/test/workspace.test.ts:68:37)
+      at async TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/workspace.test.ts:336:13)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    code: 'unsupported_platform',
+    details: undefined
+  }
+
+test at test/workspace.test.ts:3:4596
+✖ a final barrier drains full command capacity without deadlocking queued source mutations (343.778625ms)
+  Error [MeshError]: Workspace writer locking currently requires Linux.
+      at invariant (/Users/bpstr/Github/mesh-exec/src/types.ts:52:21)
+      at Workspace.open (/Users/bpstr/Github/mesh-exec/src/workspace.ts:290:5)
+      at fixture (/Users/bpstr/Github/mesh-exec/test/workspace.test.ts:68:37)
+      at async TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/workspace.test.ts:368:13)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    code: 'unsupported_platform',
+    details: undefined
+  }
+
+test at test/workspace.test.ts:3:5425
+✖ an admission delayed by sandbox qualification cannot cross a final barrier (345.899833ms)
+  Error [MeshError]: Workspace writer locking currently requires Linux.
+      at invariant (/Users/bpstr/Github/mesh-exec/src/types.ts:52:21)
+      at Workspace.open (/Users/bpstr/Github/mesh-exec/src/workspace.ts:290:5)
+      at fixture (/Users/bpstr/Github/mesh-exec/test/workspace.test.ts:68:37)
+      at async TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/workspace.test.ts:406:13)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    code: 'unsupported_platform',
+    details: undefined
+  }

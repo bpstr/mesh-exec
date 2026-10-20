@@ -1,0 +1,7 @@
+{
+  "command": "codex debug prompt-input -c model=\"gpt-5.6-terra\" -c model_provider=\"mesh-pilot\" -c model_providers.mesh-pilot={name=\"Mesh pilot\",requires_openai_auth=true,request_max_retries=0,stream_max_retries=0}",
+  "exitCode": 0,
+  "outputBytes": 33580,
+  "outputSha256": "85424b18eb67c1983fa1a228abc1fda12424838320081a1a7a80423066130799",
+  "scope": "Configuration rendering only. No model inference or runtime endpoint qualification."
+}

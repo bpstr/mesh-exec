@@ -1,0 +1,28 @@
+✖ N peers use fresh generations, enforce population/run limits and retain redacted complete output (19.701084ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 182.762334
+
+✖ failing tests:
+
+test at test/runner.test.ts:28:2227
+✖ N peers use fresh generations, enforce population/run limits and retain redacted complete output (19.701084ms)
+  AssertionError [ERR_ASSERTION]: ["Cannot access 'process2' before initialization","Cannot access 'process2' before initialization","Cannot access 'process2' before initialization","Cannot access 'process2' before initialization","Cannot access 'process2' before initialization","Cannot access 'process2' before initialization","Cannot access 'process2' before initialization"]
+  
+  0 !== 3
+  
+      at TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/runner.test.ts:261:12)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 3,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

@@ -1,0 +1,188 @@
+✔ independent A2A SDK client, durable replies, participant scope, and complete message trace (1244.621459ms)
+✔ outbox retries survive a lost response and retired sender without duplicate tasks (432.148917ms)
+✔ concurrent duplicate sends produce one task, and an ingress trace failure rolls back acceptance (706.059834ms)
+✔ default SendMessage waits, list pagination is scoped, and unsupported streaming is explicit (672.308875ms)
+✖ N peers use fresh generations, enforce population/run limits and retain redacted complete output (17.92875ms)
+✖ output capture is attached before asynchronous PID persistence for a short noisy worker (3.694916ms)
+✖ idle peers park at the mesh_yield cursor and see work arriving during exit (5.877ms)
+✖ completion closing pauses admission while heartbeats continue, then resumes on rejection (123.237458ms)
+✖ run timeout stops and reaps the process before releasing the generation (3.753292ms)
+✖ closing preserves already-running peers and waits for mission acceptance without replacement (211.333708ms)
+✖ parked populations honor the hard elapsed limit without repeated idle runs (109.947792ms)
+✔ a slot already parked exits when another slot exhausts the shared run budget (5.758792ms)
+✖ unconfirmed termination quarantines the generation without a replacement or close-wait deadlock (7.716334ms)
+✖ unexpected configured MCP use fails closed with evidence and no replacement (8.420333ms)
+✖ trace-store failures cannot be misclassified as malformed CLI JSON (7.4275ms)
+✔ OS sandbox isolates private audit files while permitting worker output and guarded source commands (51.6065ms)
+ℹ tests 16
+ℹ suites 0
+ℹ pass 6
+ℹ fail 10
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4356.799417
+
+✖ failing tests:
+
+test at test/runner.test.ts:28:2211
+✖ N peers use fresh generations, enforce population/run limits and retain redacted complete output (17.92875ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  0 !== 3
+  
+      at TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/runner.test.ts:261:12)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 3,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/runner.test.ts:28:3843
+✖ output capture is attached before asynchronous PID persistence for a short noisy worker (3.694916ms)
+  Error: ENOENT: no such file or directory, open '/var/folders/6z/mkvyjszn7hq7x9r0df5zfyw80000gn/T/mesh-runner-WnyOmH/runtime/runs/mission-test/A1/A1-run-1/stdout.jsonl'
+      at async open (node:internal/fs/promises:697:25)
+      at async readFile (node:internal/fs/promises:1348:14)
+      at async TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/runner.test.ts:295:20)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    errno: -2,
+    code: 'ENOENT',
+    syscall: 'open',
+    path: '/var/folders/6z/mkvyjszn7hq7x9r0df5zfyw80000gn/T/mesh-runner-WnyOmH/runtime/runs/mission-test/A1/A1-run-1/stdout.jsonl'
+  }
+
+test at test/runner.test.ts:28:4404
+✖ idle peers park at the mesh_yield cursor and see work arriving during exit (5.877ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  undefined !== '1'
+  
+      at TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/runner.test.ts:321:12)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: '1',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/runner.test.ts:28:4841
+✖ completion closing pauses admission while heartbeats continue, then resumes on rejection (123.237458ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+  
+    assert.ok(f.store.ends.every((run) => run.end.status === 'exited'))
+  
+      at TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/runner.test.ts:346:12)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at test/runner.test.ts:28:5526
+✖ run timeout stops and reaps the process before releasing the generation (3.753292ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'failed'
+  - 'timed-out'
+  
+      at TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/runner.test.ts:359:12)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'failed',
+    expected: 'timed-out',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/runner.test.ts:28:5982
+✖ closing preserves already-running peers and waits for mission acceptance without replacement (211.333708ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+  
+    assert.ok(f.store.ends.every((run) => run.end.status === 'exited'))
+  
+      at TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/runner.test.ts:385:12)
+      at runNextTicks (node:internal/process/task_queues:65:5)
+      at process.processTimers (node:internal/timers:568:9)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at test/runner.test.ts:28:6671
+✖ parked populations honor the hard elapsed limit without repeated idle runs (109.947792ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  8 !== 1
+  
+      at TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/runner.test.ts:400:12)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 8,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/runner.test.ts:28:7446
+✖ unconfirmed termination quarantines the generation without a replacement or close-wait deadlock (7.716334ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/runner.test.ts:429:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /termination_unconfirmed/u,
+    operator: 'rejects',
+    diff: 'simple'
+  }
+
+test at test/runner.test.ts:28:7938
+✖ unexpected configured MCP use fails closed with evidence and no replacement (8.420333ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/runner.test.ts:442:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /Unexpected MCP server/u,
+    operator: 'rejects',
+    diff: 'simple'
+  }
+
+test at test/runner.test.ts:28:8331
+✖ trace-store failures cannot be misclassified as malformed CLI JSON (7.4275ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (/Users/bpstr/Github/mesh-exec/test/runner.test.ts:460:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /trace-store-broken/u,
+    operator: 'rejects',
+    diff: 'simple'
+  }

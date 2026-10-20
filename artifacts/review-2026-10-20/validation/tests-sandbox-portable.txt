@@ -1,0 +1,9 @@
+✔ OS sandbox isolates private audit files while permitting worker output and guarded source commands (271.567583ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 1
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1235.513458

@@ -339,7 +339,7 @@ export async function digestFile(path: string): Promise<FileIntegrity> {
   }
 }
 
-const topLevelArtifacts = new Set([
+const requiredTopLevelArtifacts = new Set([
   'mission.json',
   'events.jsonl',
   'runs.json',
@@ -351,6 +351,8 @@ const topLevelArtifacts = new Set([
   'attempts.json',
   'exposures.json',
 ]);
+// Older format-version 1 bundles predate the work ledger snapshot.
+const topLevelArtifacts = new Set([...requiredTopLevelArtifacts, 'work.json']);
 
 function allowedArchivePath(path: string): boolean {
   if (!path || isAbsolute(path) || path.includes('\\') || path.includes('\0')) return false;
@@ -491,7 +493,7 @@ export async function verifyExport(directory: string): Promise<ExportVerificatio
         else result.errors.push(error instanceof Error ? error.message : String(error));
       }
     }
-    for (const required of topLevelArtifacts)
+    for (const required of requiredTopLevelArtifacts)
       if (!seen.has(required))
         result.errors.push(`Required inventory entry is missing: ${required}`);
     result.valid = !result.missing.length && !result.mismatched.length && !result.errors.length;

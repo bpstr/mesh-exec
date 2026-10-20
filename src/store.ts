@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { hostname } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 import { CORE_SCHEMA } from './schema.js';
+import { checkWorkClaim, workState } from './planning.js';
 import { Tracer, registerSecret } from './trace.js';
 import {
   MeshError,
@@ -48,6 +49,7 @@ export interface ClaimInput {
   intentionId?: string;
   description: string;
   requirementIds?: string[];
+  workId?: string;
 }
 
 /** Resources use file paths, subtree suffix '/**', or explicit named resources. */
@@ -223,7 +225,11 @@ export class Store {
         p.missionId,
         p.agentId,
         p.generation,
-        ['active', ...(allowClosing ? ['closing'] : []), ...(allowCompleted ? ['completed'] : [])],
+        [
+          'active',
+          ...(allowClosing ? ['closing'] : []),
+          ...(allowCompleted ? ['completed', 'resource-limit'] : []),
+        ],
       ],
     );
     invariant(
@@ -548,19 +554,21 @@ export class Store {
     return this.db.transaction(async (tx) => {
       await this.lock(tx, p.missionId);
       await this.assertActive(p, tx);
-      const prior = await tx.query<{ run_id: string; resources: string[] }>(
+      const prior = await tx.query<{ run_id: string; resources: string[]; work_id: string | null }>(
         'SELECT * FROM claims WHERE mission_id=$1 AND id=$2',
         [p.missionId, input.id],
       );
       if (prior.rows[0]) {
         invariant(
           prior.rows[0].run_id === p.runId &&
+            prior.rows[0].work_id === (input.workId ?? null) &&
             canonicalJson(prior.rows[0].resources) === canonicalJson(resources),
           'IDEMPOTENCY_CONFLICT',
           'Claim ID was used for different input',
         );
         return prior.rows[0];
       }
+      await checkWorkClaim(tx, p.missionId, input.workId, resources);
       const held = await tx.query<{
         id: string;
         agent_id: string;
@@ -619,7 +627,7 @@ export class Store {
         );
       }
       await tx.query(
-        'INSERT INTO claims(mission_id,id,intention_id,agent_id,run_id,generation,resources) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)',
+        'INSERT INTO claims(mission_id,id,intention_id,agent_id,run_id,generation,resources,work_id) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8)',
         [
           p.missionId,
           input.id,
@@ -628,6 +636,7 @@ export class Store {
           p.runId,
           p.generation,
           JSON.stringify(resources),
+          input.workId ?? null,
         ],
       );
       await this.changed(tx, p.missionId);
@@ -643,8 +652,8 @@ export class Store {
     dependencies?: Dependencies,
   ): Promise<void> {
     await this.assertActive(p);
-    const claims = await this.db.query<{ resources: string[] }>(
-      "SELECT resources FROM claims WHERE mission_id=$1 AND run_id=$2 AND generation=$3 AND state='held' AND ($4::text IS NULL OR id=$4)",
+    const claims = await this.db.query<{ resources: string[]; work_id: string | null }>(
+      "SELECT resources,work_id FROM claims WHERE mission_id=$1 AND run_id=$2 AND generation=$3 AND state='held' AND ($4::text IS NULL OR id=$4)",
       [p.missionId, p.runId, p.generation, claimId ?? null],
     );
     invariant(
@@ -652,6 +661,10 @@ export class Store {
       'CLAIM_REQUIRED',
       'Every changed path requires a current claim',
     );
+    for (const claim of claims.rows.filter(
+      (c) => c.work_id && paths.some((path) => c.resources.some((r) => covers(r, path))),
+    ))
+      await checkWorkClaim(this.db, p.missionId, claim.work_id!, claim.resources, true);
     for (const [id, revision] of Object.entries(dependencies?.decisions ?? {})) {
       const r = await this.db.query(
         "SELECT id FROM knowledge WHERE mission_id=$1 AND id=$2 AND revision=$3 AND freshness='current'",
@@ -747,7 +760,20 @@ export class Store {
       [p.runId, revision],
     );
   }
-  async checkpoint(p: Principal, body: unknown, id = randomUUID()): Promise<{ id: string }> {
+  async workCapacity(missionId: string): Promise<number | null> {
+    return (await workState(this.db, missionId)).admissionLimit;
+  }
+  async checkpoint(
+    p: Principal,
+    body: unknown,
+    id = randomUUID(),
+  ): Promise<{ id: string; unchanged?: boolean }> {
+    invariant(
+      Buffer.byteLength(JSON.stringify(body), 'utf8') <= 16_384,
+      'CHECKPOINT_TOO_LARGE',
+      'Keep checkpoints under 16 KiB; reference detailed artifacts',
+    );
+    let result: { id: string; unchanged?: boolean } = { id };
     await this.db.transaction(async (tx) => {
       await this.lock(tx, p.missionId);
       // Final audit metadata may be saved during the bounded completion drain.
@@ -765,6 +791,18 @@ export class Store {
         );
         return;
       }
+      const duplicate = (
+        await tx.query<{ id: string; body: unknown }>(
+          `SELECT id,body FROM checkpoints WHERE mission_id=$1 AND run_id=$2
+           AND body=(SELECT handoff FROM slots WHERE mission_id=$1 AND active_run_id=$2)
+           ORDER BY created_at DESC,id DESC LIMIT 1`,
+          [p.missionId, p.runId],
+        )
+      ).rows[0];
+      if (duplicate && canonicalJson(duplicate.body) === canonicalJson(body)) {
+        result = { id: duplicate.id, unchanged: true };
+        return;
+      }
       await tx.query(
         'INSERT INTO checkpoints(id,mission_id,agent_id,run_id,body) VALUES($1,$2,$3,$4,$5::jsonb)',
         [id, p.missionId, p.agentId, p.runId, JSON.stringify(body)],
@@ -777,7 +815,7 @@ export class Store {
       await this.changed(tx, p.missionId);
       await this.events({ ...p, kind: 'checkpoint.recorded', data: { id, body } }, tx);
     });
-    return { id };
+    return result;
   }
   async yield(
     p: Principal,
@@ -1034,8 +1072,8 @@ export class Store {
       verdict: 'pass' | 'objection';
       reasoning: string;
     },
-  ): Promise<void> {
-    await this.db.transaction(async (tx) => {
+  ): Promise<{ id: string; reused: boolean }> {
+    return this.db.transaction(async (tx) => {
       await this.lock(tx, p.missionId);
       await this.assertActive(p, tx);
       const m = await this.mission(p.missionId, tx);
@@ -1062,6 +1100,32 @@ export class Store {
               ).rows,
             )
           : null;
+      if (input.verdict === 'pass') {
+        const latest = (
+          await tx.query<{ id: string; agent_id: string; verdict: string }>(
+            `SELECT DISTINCT ON (agent_id) id,agent_id,verdict FROM reviews WHERE mission_id=$1 AND kind=$2
+           AND target_id IS NOT DISTINCT FROM $3::text AND target_revision IS NOT DISTINCT FROM $4::integer
+           AND roadmap_hash=$5 AND manifest_hash=$6 AND coverage_hash IS NOT DISTINCT FROM $7::text
+           ORDER BY agent_id,created_at DESC,id DESC`,
+            [
+              p.missionId,
+              input.kind,
+              input.targetId ?? null,
+              input.targetRevision ?? null,
+              m.roadmap_hash,
+              input.manifestHash,
+              coverage,
+            ],
+          )
+        ).rows;
+        if (!latest.some((r) => r.verdict === 'objection')) {
+          const pass = latest.find(
+            (r) =>
+              r.verdict === 'pass' && (input.kind === 'requirement' || r.agent_id === p.agentId),
+          );
+          if (pass) return { id: pass.id, reused: true };
+        }
+      }
       await tx.query(
         'INSERT INTO reviews(id,mission_id,agent_id,run_id,kind,target_id,target_revision,roadmap_hash,manifest_hash,coverage_hash,verdict,reasoning) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)',
         [
@@ -1081,6 +1145,7 @@ export class Store {
       );
       await this.changed(tx, p.missionId);
       await this.events({ ...p, kind: 'review.recorded', data: input }, tx);
+      return { id: input.id, reused: false };
     });
   }
 }

@@ -14,6 +14,120 @@ import { exportMission, messages, metrics, status } from '../src/observer.js';
 import { readEvents } from '../src/trace.js';
 const exec = promisify(execFile);
 
+test('coordinator digest keeps bodies on disk and suppresses unchanged observation traffic', async (t) => {
+  const f = await fixture();
+  t.after(f.close);
+  await f.call(f.ca, 'mesh_checkpoint', { body: { summary: 'PRIVATE_FIXTURE_BODY' } });
+  await f.db.query('UPDATE runs SET log_dir=$2 WHERE id=$1', [
+    f.a.principal.runId,
+    '/fixture/run-logs',
+  ]);
+  const first = await f.call(f.ca, 'mesh_digest');
+  assert.equal(first.unchanged, false);
+  assert.ok(first.counts);
+  assert.equal(first.artifacts.runs[0].directory, '/fixture/run-logs');
+  assert.ok(!JSON.stringify(first).includes('PRIVATE_FIXTURE_BODY'));
+  const again = await f.call(f.ca, 'mesh_digest', { after: first.cursor });
+  assert.equal(again.unchanged, true);
+  assert.equal(again.counts, undefined);
+  await f.call(f.ca, 'mesh_board');
+  assert.equal((await f.call(f.ca, 'mesh_digest', { after: again.cursor })).unchanged, true);
+  await f.call(f.cb, 'mesh_checkpoint', { body: { summary: 'new source slice' } });
+  const changed = await f.call(f.ca, 'mesh_digest', { after: again.cursor });
+  assert.ok(changed.changes.some((c: any) => c.kind === 'checkpoint.recorded'));
+  await assert.rejects(f.call(f.ca, 'mesh_digest', { after: '999999999999' }), /ahead/);
+});
+
+test('consultations reuse identical open requests, allow later new work and reject status-only offers', async (t) => {
+  const f = await fixture();
+  t.after(f.close);
+  const first = await f.call(f.ca, 'mesh_send', {
+    recipientId: 'A2',
+    messageId: 'first',
+    kind: 'review',
+    text: 'Review the prepared source slice.',
+  });
+  const repeated = await f.call(f.ca, 'mesh_send', {
+    recipientId: 'A2',
+    messageId: 'second',
+    kind: 'review',
+    text: 'Review the prepared source slice.',
+  });
+  assert.equal(repeated.taskId, first.taskId);
+  assert.equal(repeated.reused, true);
+  assert.equal((await f.call(f.cb, 'mesh_poll')).messages.length, 1);
+  await f.call(f.cb, 'mesh_reply', {
+    taskId: first.taskId,
+    messageId: 'answer',
+    state: 'completed',
+    text: 'Prepared review complete.',
+  });
+  const later = await f.call(f.ca, 'mesh_send', {
+    recipientId: 'A2',
+    messageId: 'later',
+    kind: 'review',
+    text: 'Review the prepared source slice.',
+  });
+  assert.notEqual(later.taskId, first.taskId);
+  await assert.rejects(
+    f.call(f.ca, 'mesh_send', {
+      recipientId: 'A2',
+      messageId: 'status',
+      kind: 'offer',
+      text: 'FYI done.',
+    }),
+    /actionRequired/,
+  );
+  await assert.rejects(
+    f.call(f.ca, 'mesh_send', { recipientId: 'A2', messageId: 'huge', text: 'x'.repeat(17000) }),
+    /16 KiB/,
+  );
+});
+
+test('work bundles are declared in a batch and claims require their exact ready resources', async (t) => {
+  const f = await fixture();
+  t.after(f.close);
+  await f.call(f.ca, 'mesh_requirement', {
+    id: 'r',
+    anchor: 'counter',
+    title: 'counter',
+    criteria: ['source delivered'],
+  });
+  const work = await f.call(f.ca, 'mesh_work', {
+    items: [{ id: 'w', title: 'counter', resources: ['counter.txt'], requirementIds: ['r'] }],
+  });
+  assert.deepEqual(work.independentReadyIds, ['w']);
+  assert.equal(work.items[0].resources, undefined);
+  assert.deepEqual((await f.call(f.ca, 'mesh_work', { ids: ['w'] })).items[0].resources, [
+    'counter.txt',
+  ]);
+  await assert.rejects(
+    f.call(f.cb, 'mesh_claim', {
+      id: 'unplanned',
+      resources: ['counter.txt'],
+      description: 'counter',
+    }),
+    /ready bundle/,
+  );
+  await f.call(f.cb, 'mesh_claim', {
+    id: 'planned',
+    resources: ['counter.txt'],
+    description: 'counter',
+    workId: 'w',
+  });
+  assert.equal((await f.call(f.ca, 'mesh_work')).items[0].state, 'claimed');
+  const published = await f.call(f.cb, 'mesh_patch', {
+    operationId: 'ready-source',
+    claimId: 'planned',
+    changes: [{ path: 'counter.txt', expectedHash: null, content: '0\n' }],
+  });
+  assert.equal(published.state, 'applied');
+  assert.equal(
+    (await f.call(f.cb, 'mesh_read', { paths: ['counter.txt'] })).files[0].content,
+    '0\n',
+  );
+});
+
 async function waitForWaitStarted(f: Awaited<ReturnType<typeof fixture>>, count = 1) {
   for (let i = 0; i < 100; i++) {
     const events = await readEvents(f.db, f.daemon.missionId, { kind: 'tool.mesh_wait.started' });
@@ -94,6 +208,34 @@ test('participation waits keep sessions live, fence expired runs, and allow term
   const completed = await terminal;
   assert.equal(completed.mayExit, true);
   assert.equal(completed.wakeReason, 'mission-terminal');
+});
+
+test('budget exhaustion wakes long waits and permits final receipts but refuses new work', async (t) => {
+  const f = await fixture();
+  t.after(f.close);
+  const tools = await f.cb.listTools();
+  const wait = tools.tools.find((tool) => tool.name === 'mesh_wait')!;
+  assert.equal((wait.inputSchema.properties!.waitMs as any).maximum, 300_000);
+  const pending = f.call(f.cb, 'mesh_wait');
+  await waitForWaitStarted(f, 1);
+  await f.daemon.store.stopMission(f.daemon.missionId, 'resource-limit', 'Prepared budget cutoff');
+  assert.equal((await pending).mayExit, true);
+  assert.equal((await f.call(f.cb, 'mesh_wait')).wakeReason, 'mission-terminal');
+  assert.equal((await f.call(f.cb, 'mesh_board')).terminal, true);
+  assert.equal(
+    (await f.call(f.cb, 'mesh_yield', { reason: 'Save partial handoff' })).mayExit,
+    true,
+  );
+  await f.call(f.cb, 'mesh_checkpoint', { body: { summary: 'Partial work, not accepted' } });
+  await assert.rejects(
+    f.call(f.cb, 'mesh_claim', {
+      id: 'after-budget',
+      resources: ['counter.txt'],
+      description: 'Forbidden late work',
+    }),
+    /STALE_RUN/,
+  );
+  assert.equal((await f.daemon.store.mission(f.daemon.missionId)).acceptance, null);
 });
 
 test('checkpoint body is required and malformed checkpoints do not reach persistence', async (t) => {

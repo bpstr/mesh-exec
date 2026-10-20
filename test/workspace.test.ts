@@ -276,6 +276,44 @@ test('command retries run once and full output survives bounded, redacted previe
   }
 });
 
+test('source snapshots do not drain read commands or close publication admission', async () => {
+  const f = await fixture();
+  try {
+    await writeFile(join(f.repo, 'code.ts'), 'before');
+    await f.workspace.exec(principal, {
+      operationId: 'slow-read',
+      mode: 'read',
+      argv: [process.execPath, '-e', 'setTimeout(()=>{},10000)'],
+    });
+    const snapshot = await f.workspace.withSnapshot(async () => ({
+      ...(await f.workspace.read(principal, ['code.ts'])),
+      manifest: await f.workspace.manifest(),
+    }));
+    assert.equal(snapshot.files[0].content, 'before');
+    assert.equal((await f.workspace.operation(principal, 'slow-read')).state, 'running');
+    const published = await f.workspace.patch(principal, {
+      operationId: 'during-read',
+      changes: [{ path: 'code.ts', expectedHash: contentHash('before'), content: 'after' }],
+    });
+    assert.equal(published.state, 'applied');
+    await f.workspace.exec(principal, {
+      operationId: 'local-cache',
+      mode: 'read',
+      argv: [
+        process.execPath,
+        '-e',
+        `const fs=require('node:fs');fs.mkdirSync(process.env.GOCACHE,{recursive:true});fs.writeFileSync(process.env.GOCACHE+'/probe','prepared')`,
+      ],
+    });
+    const cache = await terminal(f.workspace, 'local-cache');
+    assert.equal(cache.state, 'succeeded');
+    const output = (cache.result as any).stdout.path;
+    assert.equal(await readFile(join(output, '..', 'outputs/go-build/probe'), 'utf8'), 'prepared');
+  } finally {
+    await f.cleanup();
+  }
+});
+
 test('source mutators block coherent reads and final verification retains the gate through acceptance', async () => {
   const f = await fixture({ maxCommands: 1 });
   try {
@@ -295,7 +333,7 @@ test('source mutators block coherent reads and final verification retains the ga
       index++
     )
       await pause(8);
-    const read = f.workspace.read(principal, ['code.ts']);
+    const read = f.workspace.withSnapshot(() => f.workspace.read(principal, ['code.ts']));
     const early = await Promise.race([
       read.then(() => 'resolved'),
       pause(32).then(() => 'waiting'),

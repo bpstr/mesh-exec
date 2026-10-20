@@ -113,7 +113,7 @@ class MemoryRunnerStore implements RunnerStore {
 }
 
 const WORKER = `
-import { writeFile } from 'node:fs/promises';
+import { writeFile, readFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
 const mode = process.env.MESH_TEST_MODE;
 const generation = Number(process.env.MESH_RUN_GENERATION);
@@ -140,6 +140,9 @@ else {
   await delay(2);
   process.stdout.write(bytes.subarray(bytes.length - 25));
   process.stderr.write('diagnostic ' + token + '\\n');
+  if (mode === 'budget-drain') {
+    while (!(await readFile(process.env.MESH_TEST_DRAIN_FILE, 'utf8').catch(() => ''))) await delay(5);
+  }
   await delay(mode === 'closing-workers' && process.env.MESH_SLOT_ID === 'A2' ? 100 : Number(process.env.MESH_TEST_DELAY ?? 3));
   const outcome = mode === 'idle-always' ? 'idle' : generation === 1 && (mode === 'blocked' || (mode === 'blocked-first-slot' && process.env.MESH_SLOT_ID === 'A1')) ? 'blocked' : mode === 'idle' && generation === 1 ? 'idle' : 'continue';
   const result = { outcome, summary: 'handoff ' + token, checkpoint_id: null, waiting_on: ['idle', 'blocked'].includes(outcome) ? ['decision-1'] : [], work_revision: ['idle', 'blocked'].includes(outcome) ? '1' : null };
@@ -203,6 +206,8 @@ async function fixture(mode = 'normal'): Promise<{
     preflight: async () => ({ binary: 'fake-codex', version: 'fixture-only', requiredFlags: [] }),
     sandbox: async (input) => {
       assert.equal(input.sourceWritable, false);
+      assert.ok(input.argv.includes('--dangerously-bypass-approvals-and-sandbox'));
+      assert.ok(input.argv.includes('--skip-git-repo-check'));
       assert.equal(input.network, true);
       assert.ok(input.hiddenPaths?.includes(options.logRoot));
       assert.ok(input.writablePaths.every((path) => !path.startsWith(repository)));
@@ -313,6 +318,27 @@ test('run capture manifest proves retained prompt, schema, streams and final han
     assert.deepEqual(handoff.result, f.store.ends[0].end.result);
     assert.ok(f.events.some((event) => event.kind === 'run.capture.completed'));
     assert.ok(!JSON.stringify(capture).includes(f.store.allocations[0].token));
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('declared independent work caps new generations without oversubscribing admission', async () => {
+  const f = await fixture();
+  try {
+    f.options.concurrency = 5;
+    f.options.maxRuns = 6;
+    f.options.store.workCapacity = async () => 2;
+    let peak = 0;
+    const start = f.options.spawn!;
+    f.options.spawn = (command, args, options) => {
+      peak = Math.max(peak, f.store.live.size);
+      assert.ok(f.store.live.size <= 2);
+      return start(command, args, options);
+    };
+    const result = await runMesh(f.options);
+    assert.equal(result.runsStarted, 6);
+    assert.equal(peak, 2);
   } finally {
     await f.cleanup();
   }
@@ -460,15 +486,31 @@ test('native thread and turn correlation follows CLI items and preserves explici
   }
 });
 
+test('capacity lookups cannot race beyond the shared maximum run budget', async () => {
+  const f = await fixture();
+  try {
+    f.options.concurrency = 5;
+    f.options.maxRuns = 1;
+    f.options.store.workCapacity = async () => 2;
+    assert.equal((await runMesh(f.options)).runsStarted, 1);
+  } finally {
+    await f.cleanup();
+  }
+});
+
 test('N peers use fresh generations, enforce population/run limits and retain redacted complete output', async () => {
   const f = await fixture();
   try {
     f.options.concurrency = 3;
     f.options.maxRuns = 7;
+    f.options.model = 'gpt-6.1-sol';
+    f.options.effort = 'high';
     let peak = 0;
     let live = 0;
     const spawnWorker = f.options.spawn!;
     f.options.spawn = (command, args, options) => {
+      assert.equal(args[args.indexOf('--model') + 1], 'gpt-6.1-sol');
+      assert.ok(args.includes('model_reasoning_effort="high"'));
       const child = spawnWorker(command, args, options);
       peak = Math.max(peak, ++live);
       child.once('close', () => {
@@ -477,6 +519,8 @@ test('N peers use fresh generations, enforce population/run limits and retain re
       return child;
     };
     const summary = await runMesh(f.options);
+    const started = f.events.find((event) => event.kind === 'supervisor.started')!;
+    assert.equal((started.data as any).effort, 'high');
     assert.equal(summary.runsStarted, 7);
     assert.equal(summary.runsFinished, 7);
     assert.equal(summary.state, 'resource-limit');
@@ -549,7 +593,7 @@ test('idle exits replace every slot without a work revision and stop at the elap
     const started = Date.now();
     const summary = await runMesh(f.options);
     assert.equal(summary.state, 'resource-limit');
-    assert.equal(f.store.stopReason, 'Maximum elapsed time reached');
+    assert.equal(f.store.stopReason, 'Elapsed budget reserved for final handoffs and usage');
     assert.ok(Date.now() - started < 5000);
     assert.equal(peak, 5);
     assert.equal(f.store.generations.size, 5);
@@ -643,6 +687,60 @@ test('closing preserves already-running peers and waits for mission acceptance w
     assert.ok(!f.events.some((event) => event.kind === 'run.stop.requested'));
   } finally {
     if (complete) clearTimeout(complete);
+    await f.cleanup();
+  }
+});
+
+test('elapsed budget drains peers before its hard cutoff and retains usage without acceptance', async () => {
+  const f = await fixture('budget-drain');
+  try {
+    f.options.concurrency = 2;
+    f.options.maxRuns = 8;
+    f.options.maxElapsedMs = 2500;
+    f.options.completionGraceMs = 250;
+    const marker = join(f.options.logRoot, 'budget-drain');
+    f.options.environment!.MESH_TEST_DRAIN_FILE = marker;
+    const record = f.options.events;
+    f.options.events = async (event) => {
+      const result = await record(event);
+      if (event.kind === 'supervisor.budget-draining') await writeFile(marker, 'finish');
+      return result;
+    };
+    const began = Date.now();
+    const summary = await runMesh(f.options);
+    assert.equal(summary.state, 'resource-limit');
+    assert.equal(summary.runsStarted, 2);
+    assert.equal(f.events.filter((e) => e.kind === 'codex.turn.completed').length, 2);
+    assert.ok(f.store.ends.every(({ end }) => end.status === 'exited' && end.result));
+    assert.ok(!f.events.some((e) => e.kind === 'run.stop.requested'));
+    assert.ok(Date.now() - began < 3000);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('elapsed budget still reaps an unresponsive peer at the hard deadline', async () => {
+  const f = await fixture('hang');
+  try {
+    f.options.maxElapsedMs = 750;
+    f.options.runTimeoutMs = 5000;
+    let hardDeadline = 0;
+    const record = f.options.events;
+    f.options.events = async (event) => {
+      const result = await record(event);
+      if (event.kind === 'supervisor.budget-draining')
+        hardDeadline = Date.parse((event.data as { deadlineAt: string }).deadlineAt);
+      if (event.kind === 'run.stop.requested') assert.ok(Date.now() >= hardDeadline - 10);
+      return result;
+    };
+    const began = Date.now();
+    const summary = await runMesh(f.options);
+    assert.equal(summary.state, 'resource-limit');
+    assert.ok(hardDeadline > 0);
+    assert.equal(f.store.ends[0].end.status, 'aborted');
+    assert.equal(f.store.ends[0].end.reaped, true);
+    assert.ok(Date.now() - began < 1500);
+  } finally {
     await f.cleanup();
   }
 });

@@ -1,6 +1,6 @@
 {
   "name": "mesh-exec",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "description": "Independent Codex CLI peers with durable A2A coordination in one shared checkout",
   "type": "module",
   "bin": {

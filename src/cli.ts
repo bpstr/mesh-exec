@@ -12,7 +12,15 @@ import { preflightCodex } from './codex.js';
 import { assertSandboxAvailable } from './sandbox.js';
 import { hash } from './store.js';
 import { redact, registerSecret, type TraceFilter } from './trace.js';
-import { status, messages, metrics, logPath, exportEvents, exportMission } from './observer.js';
+import {
+  status,
+  digest,
+  messages,
+  metrics,
+  logPath,
+  exportEvents,
+  exportMission,
+} from './observer.js';
 import { listConversationMessages, conversationTimeline } from './conversations.js';
 import { listRuns } from './runs.js';
 import { streamLog, traceEvents, writeOutput } from './streams.js';
@@ -30,6 +38,7 @@ Run:
 Observe (works after the runner stops):
   mesh status --mission <id>
   mesh runs --mission <id> [--agent A1] [--run <id>] [--cursor <cursor>]
+  mesh digest --mission <id> [--after <cursor>]
   mesh trace --mission <id> --follow [--agent A1] [--run <id>] [--task <id>]
   mesh trace --mission <id> --kind-prefix message. [--trace-id <id>] [--until <seq>]
   mesh messages --mission <id> [--agent A1] [--task <id>] [--pending]
@@ -52,6 +61,7 @@ Runtime options:
   --heavy-commands <n>     Concurrent tool commands; default 2
   --queued-commands <n>    Additional accepted command backlog; default 32 (0 disables)
   --model <name>           Use the specified Codex model
+  --effort <level>         Set Codex reasoning effort, e.g. high
   --codex <path>           Codex executable; default codex
   --verify '<JSON argv>'   Required final check; repeatable
   --state-dir <path>      Private runtime directory outside the repository
@@ -63,6 +73,26 @@ All commands use one physical checkout. No worktrees or parent LLM dispatcher.
 `;
 
 type Config = Record<string, unknown>;
+export function codexSettings(
+  cli: { model?: string; effort?: string },
+  config: Config = {},
+  saved: Config = {},
+): { model?: string; effort?: string } {
+  const model = cli.model ?? config.model ?? saved.model;
+  const effort = cli.effort ?? config.effort ?? saved.effort;
+  invariant(
+    model === undefined || (typeof model === 'string' && model.length > 0 && model.length <= 200),
+    'INVALID_OPTION',
+    'model must be a nonempty string of at most 200 characters',
+  );
+  invariant(
+    effort === undefined || (typeof effort === 'string' && /^[a-z][a-z0-9_-]{0,49}$/u.test(effort)),
+    'INVALID_OPTION',
+    'effort must be a lowercase reasoning level, e.g. high',
+  );
+  return { model, effort };
+}
+
 function numberOption(value: unknown, fallback: number, name: string, minimum = 1): number {
   const n = value === undefined ? fallback : Number(value);
   invariant(
@@ -125,6 +155,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
       'heavy-commands': { type: 'string' },
       'queued-commands': { type: 'string' },
       model: { type: 'string' },
+      effort: { type: 'string' },
       codex: { type: 'string' },
       'state-dir': { type: 'string' },
       port: { type: 'string' },
@@ -157,7 +188,10 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   });
   const command = positionals[0] ?? 'help';
   if (values.version) {
-    process.stdout.write('mesh-exec 0.1.0\n');
+    const { version } = JSON.parse(
+      await readFile(new URL('../package.json', import.meta.url), 'utf8'),
+    );
+    process.stdout.write(`mesh-exec ${version}\n`);
     return;
   }
   if (values.help || command === 'help') {
@@ -243,6 +277,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   process.once('SIGTERM', onSignal);
   try {
     if (command === 'run' || command === 'daemon') {
+      const launch = codexSettings(values, config);
       const budget = runnerBudget({
         timeout: values.timeout,
         maxRuns: values['max-runs'] ?? config.maxRuns,
@@ -305,7 +340,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
         config: {
           workflow: config.workflow ?? 'implementation',
           verification: verification ?? [],
-          model: values.model ?? config.model,
+          ...launch,
           codexBinary: codexBinary ?? 'codex',
         },
       });
@@ -345,7 +380,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
               numberOption(values['run-minutes'] ?? config.runMinutes, 20, 'run-minutes') * 60_000,
             completionGraceMs: numberOption(config.completionGraceMs, 30_000, 'completionGraceMs'),
             codexBinary,
-            model: values.model ?? (config.model as string | undefined),
+            ...codexSettings(values, config, mission.config),
             hiddenPaths: [runtimeDir],
             signal: shutdown.signal,
           });
@@ -361,6 +396,12 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     invariant(missionId, 'MISSION_REQUIRED', 'Specify --mission <id>');
     if (command === 'status') {
       process.stdout.write(JSON.stringify(redact(await status(db, missionId)), null, 2) + '\n');
+      return;
+    }
+    if (command === 'digest') {
+      process.stdout.write(
+        JSON.stringify(redact(await digest(db, missionId, values.after)), null, 2) + '\n',
+      );
       return;
     }
     if (command === 'metrics') {
@@ -487,7 +528,10 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+const entrypoint = process.argv[1]
+  ? await realpath(process.argv[1]).catch(() => resolve(process.argv[1]))
+  : undefined;
+if (entrypoint && import.meta.url === pathToFileURL(entrypoint).href) {
   main().catch((error) => {
     process.stderr.write(
       JSON.stringify(

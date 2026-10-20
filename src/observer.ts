@@ -12,6 +12,96 @@ import {
 } from './artifacts.js';
 import type { Database, Sql } from './types.js';
 import { invariant } from './types.js';
+import { workState } from './planning.js';
+
+/** Counts and artifact references only; event bodies and handoffs stay on disk. */
+export async function digest(db: Sql, missionId: string, after?: string) {
+  invariant(
+    after === undefined || (after.length <= 20 && /^\d+$/u.test(after)),
+    'INVALID_CURSOR',
+    'after must be an event sequence',
+  );
+  const mission = (
+    await db.query<{ id: string; state: string; revision: string; next_event_seq: string }>(
+      'SELECT id,state,revision,next_event_seq FROM missions WHERE id=$1',
+      [missionId],
+    )
+  ).rows[0];
+  invariant(mission, 'NOT_FOUND', 'Mission does not exist');
+  invariant(
+    after === undefined || BigInt(after) <= BigInt(mission.next_event_seq),
+    'INVALID_CURSOR',
+    'Cursor is ahead of this mission',
+  );
+  const changes = await db.query<{ kind: string; count: number }>(
+    `SELECT kind,count(*)::integer AS count FROM trace_events WHERE mission_id=$1 AND seq>$2 AND seq<=$3
+     AND (kind LIKE 'mission.%' OR kind LIKE 'run.%' OR kind LIKE 'claim.%' OR kind LIKE 'work.%'
+       OR kind LIKE 'requirement.%' OR kind LIKE 'checkpoint.%' OR kind LIKE 'review.%'
+       OR kind LIKE 'knowledge.%' OR kind LIKE 'workspace.operation.%'
+       OR kind IN ('message.ingress.accepted','message.reply.accepted','message.acknowledged','message.delivery.rejected'))
+     GROUP BY kind ORDER BY kind`,
+    [missionId, after ?? '0', mission.next_event_seq],
+  );
+  const cursor = String(mission.next_event_seq);
+  const state = { id: mission.id, state: mission.state, workRevision: String(mission.revision) };
+  if (after !== undefined && !changes.rows.length)
+    return { mission: state, cursor, unchanged: true };
+  const [runs, requirements, commands, mail, artifacts, operationArtifacts, tokens, work] =
+    await Promise.all([
+      db.query(
+        'SELECT state,count(*)::integer AS count FROM runs WHERE mission_id=$1 GROUP BY state ORDER BY state',
+        [missionId],
+      ),
+      db.query(
+        'SELECT state,count(*)::integer AS count FROM requirements WHERE mission_id=$1 GROUP BY state ORDER BY state',
+        [missionId],
+      ),
+      db.query(
+        'SELECT kind,state,count(*)::integer AS count FROM workspace_operations WHERE mission_id=$1 GROUP BY kind,state ORDER BY kind,state',
+        [missionId],
+      ),
+      db.query(
+        'SELECT count(*)::integer AS total,count(*) FILTER(WHERE handled_at IS NULL)::integer AS pending FROM mailbox_deliveries WHERE mission_id=$1',
+        [missionId],
+      ),
+      db.query(
+        'SELECT id,log_dir AS directory FROM runs WHERE mission_id=$1 AND log_dir IS NOT NULL ORDER BY started_at DESC,id LIMIT 10',
+        [missionId],
+      ),
+      db.query(
+        `SELECT operation_id AS id,result->'stdout'->>'path' AS stdout,result->'stderr'->>'path' AS stderr
+      FROM workspace_operations WHERE mission_id=$1 AND result IS NOT NULL AND kind='command' ORDER BY updated_at DESC,operation_id LIMIT 10`,
+        [missionId],
+      ),
+      usage(db, missionId),
+      workState(db, missionId),
+    ]);
+  return {
+    mission: state,
+    cursor,
+    unchanged: false,
+    changes: changes.rows,
+    counts: {
+      runs: runs.rows,
+      requirements: requirements.rows,
+      operations: commands.rows,
+      messages: mail.rows[0],
+      work: Object.fromEntries(
+        ['ready', 'blocked', 'claimed', 'implemented'].map((state) => [
+          state,
+          work.items.filter((i) => i.state === state).length,
+        ]),
+      ),
+    },
+    admissionLimit: work.admissionLimit,
+    usage: tokens,
+    artifacts: {
+      runs: artifacts.rows,
+      commands: operationArtifacts.rows,
+      limits: { runs: 10, commands: 10 },
+    },
+  };
+}
 
 /** CLI receipts only: missing/interrupted usage is unknown, never estimated as zero. */
 export async function usage(db: Sql, missionId: string) {
@@ -551,6 +641,9 @@ export async function exportMission(
         'mission.json',
         await jsonArtifact(join(directory, 'mission.json'), await status(tx, missionId)),
       );
+      const work = await workState(tx, missionId);
+      remember('work.json', await jsonArtifact(join(directory, 'work.json'), work));
+      counts.work = work.items.length;
       trace = await exportEvents(tx, missionId, join(directory, 'events.jsonl'));
       remember('events.jsonl', trace);
       for (const spec of TABLE_EXPORTS) {

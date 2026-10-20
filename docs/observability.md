@@ -10,11 +10,15 @@ Set the same `MESH_DATABASE_URL` used by the runner. The following commands quer
 
 ```bash
 mesh status --mission MISSION_ID
+mesh digest --mission MISSION_ID
+mesh digest --mission MISSION_ID --after CURSOR
 mesh messages --mission MISSION_ID --pending
 mesh trace --mission MISSION_ID --follow
 ```
 
 Status includes the recorded roadmap, mission state and revision, slot generations and active run IDs, run-state counts, requirement-state counts, inbox counts and oldest pending age, outgoing delivery state, workspace-operation counts, and any final acceptance record.
+
+`digest` provides compact coordination counts, recent artifact locations, usage, and a sequence cursor. Pass that cursor with `--after` to check for relevant changes since the previous digest. It is an operator summary; use message history or an export when you need the underlying records and a consistent database snapshot.
 
 Use this to distinguish a busy population from one waiting for coordination. A parked slot is a persistent identity with a handoff, not a lost agent. A resource-limit or stopped mission is not a completed roadmap.
 
@@ -156,6 +160,7 @@ The directory contains:
 | File/directory                 | Contents                                                                                                  |
 | ------------------------------ | --------------------------------------------------------------------------------------------------------- |
 | `mission.json`                 | Mission status snapshot and acceptance, when present                                                      |
+| `work.json`                    | Peer-authored work ledger and admission state from the same database snapshot                             |
 | `events.jsonl`                 | The complete durable event history, exported in pages                                                     |
 | `runs.json`                    | Run identities, state, results, and artifact references                                                   |
 | `operations.json`              | Workspace operation requests, state, results, and errors                                                  |
@@ -173,6 +178,8 @@ An export does not silently assert that every referenced runtime file survived. 
 The versioned manifest records archive paths, original source paths, byte counts, SHA-256 hashes, and whether original trace offsets still match the exported file. Reapplying credential filtering can change byte positions; an artifact with `offsetsPreserved: false` must be read as the exported content, not addressed using its source file's offsets. JSON table arrays and artifact files are written incrementally instead of loading an entire large mission or log into memory.
 
 `verify-export` works without a database or running daemon. It checks the recorded file hashes and sizes and reports missing files, mismatches, unsafe paths, errors, and declared partial captures. Verification establishes archive integrity relative to its manifest; capture completeness is a separate reported property. The bundle does not replace a PostgreSQL backup or source checkout backup.
+
+New bundles include `work.json`; verification also accepts earlier format-version 1 bundles that predate this optional ledger file.
 
 For a trace-only JSONL export, optionally filtered:
 

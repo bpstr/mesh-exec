@@ -80,8 +80,9 @@ export interface CodexInvocationOptions {
   runToken: string;
   codexBinary?: string;
   model?: string;
+  effort?: string;
   environment?: NodeJS.ProcessEnv;
-  /** macOS cannot nest Seatbelt sandboxes; the runner supplies the outer boundary. */
+  /** The runner supplies an enforced outer boundary before spawning Codex. */
   externallySandboxed?: boolean;
 }
 
@@ -117,6 +118,13 @@ export function buildCodexInvocation(options: CodexInvocationOptions): CodexInvo
     throw new Error('A nonempty valid run credential is required');
   if (!Number.isSafeInteger(options.generation) || options.generation < 1)
     throw new Error('Run generation must be a positive integer');
+  if (
+    options.effort !== undefined &&
+    (typeof options.effort !== 'string' || !/^[a-z][a-z0-9_-]{0,49}$/u.test(options.effort))
+  )
+    throw new Error(
+      'Reasoning effort must be a nonempty lowercase identifier of at most 50 characters',
+    );
   validateMeshUrl(options.mcpUrl);
   const cwd = resolve(options.repository);
   const runDirectory = resolve(options.runDirectory);
@@ -139,8 +147,10 @@ export function buildCodexInvocation(options: CodexInvocationOptions): CodexInvo
     '--ignore-user-config',
     '--cd',
     cwd,
-    '--sandbox',
-    options.externallySandboxed ? 'danger-full-access' : 'read-only',
+    ...(options.externallySandboxed
+      ? ['--dangerously-bypass-approvals-and-sandbox']
+      : ['--sandbox', 'read-only']),
+    '--skip-git-repo-check',
     '--strict-config',
     '--ephemeral',
     '-c',
@@ -170,6 +180,8 @@ export function buildCodexInvocation(options: CodexInvocationOptions): CodexInvo
     '-c',
     'mcp_servers.mesh.enabled=true',
     '-c',
+    'mcp_servers.mesh.tool_timeout_sec=330',
+    '-c',
     'mcp_servers.mesh.default_tools_approval_mode="approve"',
     '--json',
     '--output-schema',
@@ -178,6 +190,7 @@ export function buildCodexInvocation(options: CodexInvocationOptions): CodexInvo
     resultPath,
   ];
   if (options.model) args.push('--model', options.model);
+  if (options.effort) args.push('-c', `model_reasoning_effort=${tomlString(options.effort)}`);
   args.push('-');
   return {
     command: options.codexBinary ?? 'codex',
@@ -252,6 +265,8 @@ export async function preflightCodex(
     '--ignore-user-config',
     '--cd',
     '--sandbox',
+    '--dangerously-bypass-approvals-and-sandbox',
+    '--skip-git-repo-check',
     '--ephemeral',
     '--json',
     '--output-schema',

@@ -30,7 +30,14 @@ import {
   ExtendedAgentCardNotConfiguredError,
   ContentTypeNotSupportedError,
 } from '@a2a-js/sdk/errors';
-import { MeshError, type Database, type EventSink, type Principal, type Sql } from './types.js';
+import {
+  invariant,
+  MeshError,
+  type Database,
+  type EventSink,
+  type Principal,
+  type Sql,
+} from './types.js';
 
 /** Protocol state and delivery records share the same transaction as their trace events. */
 export const A2A_SCHEMA = `
@@ -364,6 +371,11 @@ export class A2aService {
       configuration: { returnImmediately: true },
     });
     const wireRequest = SendMessageRequest.toJSON(request);
+    invariant(
+      Buffer.byteLength(json(wireRequest), 'utf8') <= 16_384,
+      'CONSULTATION_TOO_LARGE',
+      'Keep consultations under 16 KiB; reference artifacts instead of copying logs',
+    );
     const payloadHash = hash(Message.toJSON(message));
     const outbox = await this.options.db.transaction(async (tx) => {
       await lockMission(tx, principal.missionId);
@@ -388,6 +400,33 @@ export class A2aService {
           { outboxId: prior.outbox_id },
         );
         return prior;
+      }
+      // A fresh message ID must not open a second identical consultation while
+      // the original request is pending or its task is still actionable.
+      if (!input.taskId) {
+        const duplicate = (
+          await tx.query<OutboxRow>(
+            `SELECT o.* FROM a2a_outbox o WHERE o.mission_id=$1 AND o.sender_id=$2 AND o.recipient_id=$3
+           AND ((o.request->'message')-'messageId')=(($4::jsonb->'message')-'messageId')
+           AND (o.state IN ('pending','sending') OR (o.state='delivered' AND EXISTS (
+             SELECT 1 FROM a2a_tasks t WHERE t.mission_id=o.mission_id AND t.task_id=o.result->>'id'
+             AND t.sender_id=o.sender_id AND t.recipient_id=o.recipient_id AND NOT(t.state=ANY($5::integer[])))))
+           ORDER BY o.created_at LIMIT 1`,
+            [
+              principal.missionId,
+              principal.agentId,
+              recipientId,
+              json(wireRequest),
+              [
+                TaskState.TASK_STATE_COMPLETED,
+                TaskState.TASK_STATE_FAILED,
+                TaskState.TASK_STATE_CANCELED,
+                TaskState.TASK_STATE_REJECTED,
+              ],
+            ],
+          )
+        ).rows[0];
+        if (duplicate) return duplicate;
       }
       const outboxId = randomUUID();
       const traceId = randomUUID();
@@ -417,7 +456,10 @@ export class A2aService {
     });
     if (outbox.state === 'pending' || outbox.state === 'sending')
       await this.dispatch(outbox.outbox_id);
-    return this.outboxReceipt(outbox.outbox_id);
+    return {
+      ...(await this.outboxReceipt(outbox.outbox_id)),
+      reused: outbox.message_id !== messageId,
+    };
   }
 
   async reply(principal: Principal, input: ReplyInput) {

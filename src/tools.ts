@@ -8,6 +8,8 @@ import { A2aService } from './a2a.js';
 import { Workspace } from './workspace.js';
 import { Completion } from './completion.js';
 import { coordinationInstructions, discussionInstructions } from './coordination.js';
+import { digest } from './observer.js';
+import { declareWork, workState } from './planning.js';
 import { invariant, type Principal } from './types.js';
 
 const id = z.string().min(1).max(256);
@@ -86,7 +88,7 @@ export class MeshTools {
     }
     // Keep the initial revision so a concurrent change triggers the next refresh.
     const board = (await this.store.board(p, input.query, input)) as Record<string, any>;
-    const [inbox, reviews, operations, consultations, participation] = await Promise.all([
+    const [inbox, reviews, operations, consultations, participation, work] = await Promise.all([
       this.a2a.poll(p),
       this.store.db.query(
         'SELECT id,agent_id,kind,target_id,target_revision,manifest_hash,coverage_hash,verdict,reasoning FROM reviews WHERE mission_id=$1 ORDER BY created_at DESC,id LIMIT 100',
@@ -111,6 +113,7 @@ export class MeshTools {
         ],
       ),
       this.participation(p),
+      workState(this.store.db, p.missionId),
     ]);
     return {
       ...board,
@@ -135,6 +138,11 @@ export class MeshTools {
       operations: operations.rows,
       consultations: consultations.rows,
       participation,
+      work: {
+        declared: work.items.length,
+        independentReadyIds: work.independentReadyIds.slice(0, 50),
+        admissionLimit: work.admissionLimit,
+      },
       // Discovery lists are bounded; acceptance checks all records.
       limits: { reviews: 100, operations: 50, consultations: 100 },
     };
@@ -180,6 +188,7 @@ export class MeshTools {
           try {
             const finishing =
               name === 'mesh_wait' ||
+              name === 'mesh_digest' ||
               name === 'mesh_board' ||
               name === 'mesh_yield' ||
               name === 'mesh_checkpoint' ||
@@ -195,7 +204,7 @@ export class MeshTools {
                 // or entering the now-closed workspace/A2A services.
                 if (name === 'mesh_board' || name === 'mesh_yield') {
                   const state = await this.store.observe(p.missionId);
-                  if (state.state === 'completed') {
+                  if (!['active', 'closing'].includes(state.state)) {
                     const participation = await this.participation(p);
                     return name === 'mesh_yield'
                       ? participation
@@ -295,19 +304,19 @@ export class MeshTools {
     );
     tool(
       'mesh_wait',
-      'Stay available in this process for reviews and messages. Wait up to 30000 ms (default 20000) without ending your session. Wakes on inbox delivery, shared work change, or mission termination. While mayExit=false, do useful work or wait again; do not send a final handoff.',
+      'Stay available in this process for reviews and messages. Wait up to 300000 ms (default 120000) without ending your session. Wakes on inbox delivery, shared work change, or mission termination. While mayExit=false, do useful work or wait again; do not send a final handoff.',
       {
         sinceRevision: z
           .string()
           .regex(/^-?\d+$/)
           .optional(),
-        waitMs: z.number().int().min(0).max(30_000).optional(),
+        waitMs: z.number().int().min(0).max(300_000).optional(),
       },
       true,
       async (a) => {
         const first = await this.store.observe(p.missionId);
         const revision = a.sinceRevision ?? first.workRevision;
-        const deadline = Date.now() + (a.waitMs ?? 20_000);
+        const deadline = Date.now() + (a.waitMs ?? 120_000);
         for (;;) {
           const state = await this.store.observe(p.missionId);
           if (!['active', 'closing'].includes(state.state)) {
@@ -352,6 +361,68 @@ export class MeshTools {
       },
     );
     tool(
+      'mesh_digest',
+      'Read coordinator counts, changed event kinds and artifact paths only. Pass the returned cursor as after; unchanged results omit repeated counts. Full logs remain in artifacts.',
+      { after: z.string().max(20).regex(/^\d+$/).optional() },
+      true,
+      (a) => digest(this.store.db, p.missionId, a.after),
+    );
+    tool(
+      'mesh_work',
+      'Declare independent work bundles in one batch, or list ready/blocked summaries. Pass ids (up to 10) to read complete selected bundles. Requires existing target requirements and exact prerequisite revisions. Choose independentReadyIds before claiming files with workId.',
+      {
+        items: z
+          .array(
+            z.object({
+              id,
+              title: z.string().min(1).max(400),
+              resources: z.array(z.string()).min(1).max(200),
+              requirementIds: z.array(id).min(1).max(200),
+              requires: z.record(z.number().int().positive()).optional(),
+              expectedRevision: z.number().int().positive().optional(),
+            }),
+          )
+          .min(1)
+          .max(100)
+          .optional(),
+        afterId: id.optional(),
+        ids: z.array(id).min(1).max(10).optional(),
+      },
+      false,
+      async (a) => {
+        if (a.items) await declareWork(this.store, p, a.items);
+        const work = await workState(this.store.db, p.missionId);
+        const remaining = work.items.filter((i) =>
+          a.ids ? a.ids.includes(i.id) : !a.afterId || i.id > a.afterId,
+        );
+        invariant(
+          !a.ids || new Set(a.ids).size === remaining.length,
+          'UNKNOWN_WORK',
+          'At least one requested work bundle does not exist',
+        );
+        const page = remaining.slice(0, 50);
+        const items = a.ids
+          ? page
+          : page.map(({ id, title, state, revision, owners, blockedBy, resources, requires }) => ({
+              id,
+              title,
+              state,
+              revision,
+              owners,
+              blockedBy,
+              resourceCount: resources.length,
+              prerequisiteCount: Object.keys(requires).length,
+            }));
+        return {
+          items,
+          independentReadyIds: work.independentReadyIds.slice(0, 50),
+          admissionLimit: work.admissionLimit,
+          total: work.items.length,
+          nextCursor: !a.ids && remaining.length > page.length ? page.at(-1)!.id : null,
+        };
+      },
+    );
+    tool(
       'mesh_claim',
       'Atomically claim repository-relative paths (src/module.ts), subtrees (src/**), or coordination names (resource:integration). Paths have no file: prefix. Conflicts return owners; choose other useful work.',
       {
@@ -360,6 +431,7 @@ export class MeshTools {
         intentionId: id.optional(),
         description: z.string().min(1).max(8000),
         requirementIds: z.array(id).optional(),
+        workId: id.optional(),
       },
       false,
       async (a) => {
@@ -393,6 +465,7 @@ export class MeshTools {
               correlationId: id.optional(),
               causationId: id.optional(),
               references: z.array(z.unknown()).optional(),
+              actionRequired: z.string().min(1).max(1000).optional(),
             }
           : {}),
       },
@@ -419,6 +492,13 @@ export class MeshTools {
             kind: 'question',
           };
         }
+        invariant(
+          this.workflow === 'discussion' || a.kind !== 'offer' || a.actionRequired,
+          'STATUS_ONLY_MESSAGE',
+          'Record status as a checkpoint or board offer; a consultation offer needs actionRequired',
+        );
+        if (a.actionRequired)
+          a.references = [...(a.references ?? []), { actionRequired: a.actionRequired }];
         const receipt = await this.a2a.send(p, a);
         invariant(
           receipt.state !== 'failed',
@@ -528,7 +608,7 @@ export class MeshTools {
       },
       false,
       async (a) => {
-        return this.workspace.withBarrier(async () => {
+        return this.workspace.withSnapshot(async () => {
           if (a.evidence?.files) {
             const read = await this.workspace.read(p, Object.keys(a.evidence.files));
             for (const file of read.files)
@@ -567,19 +647,18 @@ export class MeshTools {
         targetRevision: z.number().int().positive().optional(),
         manifestHash: z.string().regex(/^[a-f0-9]{64}$/),
         verdict: z.enum(['pass', 'objection']),
-        reasoning: z.string().min(1),
+        reasoning: z.string().min(1).max(8192),
       },
       false,
       async (a) => {
-        return this.workspace.withBarrier(async () => {
+        return this.workspace.withSnapshot(async () => {
           const manifest = await this.workspace.manifest();
           invariant(
             a.manifestHash === manifest.hash,
             'STALE_REVIEW',
             'Review source manifest changed',
           );
-          await this.store.review(p, a);
-          return { id: a.id, manifestHash: manifest.hash };
+          return { ...(await this.store.review(p, a)), manifestHash: manifest.hash };
         });
       },
     );
@@ -590,7 +669,7 @@ export class MeshTools {
       true,
       async (a) =>
         a.manifest
-          ? this.workspace.withBarrier(async () => ({
+          ? this.workspace.withSnapshot(async () => ({
               ...(await this.workspace.read(p, a.paths)),
               manifest: await this.workspace.manifest(),
             }))

@@ -28,7 +28,7 @@ mesh run --repo /path/to/repo --roadmap ROADMAP.md \
 
 | Setting                                | Default | What it counts                                                       |
 | -------------------------------------- | ------: | -------------------------------------------------------------------- |
-| `--agents` / `agents`                  |      10 | Managed Codex processes; a new mission's stable peer population      |
+| `--agents` / `agents`                  |      10 | Maximum managed Codex processes; a new mission's stable peer slots   |
 | `--heavy-commands` / `heavyCommands`   |       2 | Command execution permits held by the workspace service              |
 | `--queued-commands` / `queuedCommands` |      32 | Additional accepted nonterminal commands beyond the execution budget |
 
@@ -44,6 +44,12 @@ They do not resize an existing mission's peer slots. The `daemon.ready` trace
 event records the effective command settings so later inspection can distinguish
 invocations with different budgets. CLI flags override the corresponding JSON
 settings.
+
+The runner may admit fewer agent processes than the configured maximum when a
+peer-authored work plan exposes less independent work. That population decision
+is separate from the command limits: it does not select a peer's next task or
+increase tool capacity. See [shared coordination](coordination.md) for work-plan
+admission and review capacity.
 
 ## Admission, replay, and overload
 

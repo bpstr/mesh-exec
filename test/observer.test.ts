@@ -26,7 +26,7 @@ import { A2A_SCHEMA } from '../src/a2a.js';
 import { WORKSPACE_SCHEMA } from '../src/workspace.js';
 import { registerSecret } from '../src/trace.js';
 import { TestDatabase } from './helpers.js';
-import type { Sql, SqlResult } from '../src/types.js';
+import type { Database, Sql, SqlResult } from '../src/types.js';
 
 const sha = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 
@@ -203,7 +203,7 @@ test('event export pages beyond 2000 records and excludes events committed after
   assert.equal((await digestFile(path)).sha256, exported.sha256);
 });
 
-test('mission export retains paged run history, active command logs, complete conversation state, and capture integrity', async (t) => {
+test('mission export retains paged run history, work state, active command logs, complete conversation state, and capture integrity', async (t) => {
   const f = await fixture();
   t.after(f.close);
   const runDirectory = join(f.directory, 'run-01');
@@ -287,12 +287,42 @@ test('mission export retains paged run history, active command logs, complete co
   await f.db.query(
     `INSERT INTO a2a_outbox_attempts(attempt_id,outbox_id,error) VALUES('attempt-1','outbox-1','{"message":"transient retry"}')`,
   );
+  await f.db.query(
+    `INSERT INTO requirements(mission_id,id,anchor,title,criteria,state,author_agent)
+    VALUES($1,'base','Keep','Base','[]','implemented','A1'),($1,'target','Keep','Target','[]','open','A1')`,
+    [f.mission.id],
+  );
+  await f.db.query(
+    `INSERT INTO work_items(mission_id,id,title,resources,requirement_ids,requires)
+    VALUES($1,'work-1',$2,'["src/**"]','["target"]','{"base":1}')`,
+    [f.mission.id, `Implement target ${secret}`],
+  );
 
   const directory = join(f.directory, 'export');
-  const exported = (await exportMission(f.db, f.mission.id, directory)) as Record<string, any>;
+  const snapshotOnly: Database = {
+    query: async () => {
+      throw new Error('Export database reads must use the transaction snapshot');
+    },
+    transaction: (body) => f.db.transaction(body),
+    close: async () => {},
+  };
+  const exported = (await exportMission(snapshotOnly, f.mission.id, directory)) as Record<
+    string,
+    any
+  >;
   const manifest = JSON.parse(await readFile(join(directory, 'export.json'), 'utf8'));
   assert.equal(manifest.formatVersion, 1);
   assert.equal(manifest.upperEventSeq, exported.upperEventSeq);
+  const workPath = join(directory, 'work.json');
+  const work = JSON.parse(await readFile(workPath, 'utf8'));
+  assert.equal(work.items[0].state, 'ready');
+  assert.equal(work.items[0].title, 'Implement target [REDACTED]');
+  assert.deepEqual(work.independentReadyIds, ['work-1']);
+  assert.equal(work.admissionLimit, 2);
+  assert.equal(manifest.tables.work, 1);
+  const workArtifact = manifest.artifacts.find((item: any) => item.path === 'work.json');
+  assert.equal(workArtifact.integrity, 'verified');
+  assert.equal(workArtifact.sha256, (await digestFile(workPath)).sha256);
   const runs = JSON.parse(await readFile(join(directory, 'runs.json'), 'utf8'));
   assert.equal(runs.length, 43);
   assert.equal(new Set(runs.map((item: any) => item.id)).size, 43);

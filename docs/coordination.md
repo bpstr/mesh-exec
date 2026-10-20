@@ -1,5 +1,48 @@
 # Shared coordination
 
+## Compact observation and ready work
+
+Use `mesh digest --mission ID` or `mesh_digest` for routine observation. The
+response contains counts, changed event kinds, reported usage and bounded artifact
+references. Pass its cursor as `after` (`--after` in the CLI). Observation-only
+tool traffic does not cause another full response; unchanged responses omit counts.
+Messages, checkpoints, handoffs and log bodies are never part of this feed.
+
+Peers declare independent bundles in batches with `mesh_work`. Each bundle names
+target requirement IDs, its complete resource bundle and any prerequisite IDs
+with exact revisions in `requires`. Requirements must exist first. The tool
+reports ready, claimed, blocked and implemented bundles and a conservative disjoint
+frontier. Prerequisite state or revision changes block claims and publication;
+inspect new evidence before updating pins. Cycles and duplicate target ownership
+are rejected atomically. This is implementation readiness, not final acceptance.
+
+Once a plan exists, file claims require `workId` and the complete declared bundle.
+Existing claims are preserved. The runner limits new generations to the declared
+independent frontier plus active claim owners and one review/integration seat,
+with a minimum of two peers. Before any bundles exist, the configured population
+applies. Live peers are never killed merely to shrink capacity. Work discovery
+remains peer-selected; there is no parent LLM dispatcher. Plan listings paginate
+in 50-item summary pages; pass `ids` (up to ten) for complete selected bundles.
+Declaration batches are capped at 64 KiB. Mission exports retain the plan in `work.json`.
+
+## Batched coordination
+
+Identical current checkpoints reuse their record without changing the work
+revision. A different intervening checkpoint makes a repeated earlier body a new
+change. Valid passing requirement reviews on the exact revision and source
+manifest are reused; coverage reviews retain distinct reviewer identities.
+Unresolved objections prevent reuse from hiding a required correction.
+
+Identical open consultations to the same peer reuse their original message and
+task IDs, even when retried with another message ID. A terminal consultation does
+not prevent a later new request. Use the returned IDs. Pure status offers are
+board/checkpoint updates; a consultation offer requires `actionRequired`.
+Checkpoints and outgoing consultations are limited to 16 KiB, and review reasoning
+to 8,192 characters. Store full evidence in artifacts and send references. These controls do
+not classify semantic duplicates or judge the meaning of an agent's request.
+
+## Board details
+
 The board defaults to `detail: "summary"` for routine coordination. Requirements
 retain their criteria, revision, author and state, with `evidenceCount` in place
 of repeated evidence. Passing review reasoning is omitted; objection reasoning
@@ -8,7 +51,7 @@ or investigating review reasoning. This explicit request bypasses
 `sinceRevision` suppression. Durable records and final acceptance use the full
 evidence regardless of the display mode.
 
-After acceptance, a still-leased peer can call `mesh_board` or `mesh_yield`
+After acceptance or elapsed-budget exhaustion, a still-leased peer can call `mesh_board` or `mesh_yield`
 to receive terminal participation state. The terminal board has `terminal: true`
 and contains mission state, work revision and participation, without discovery
 lists. Terminal yield is a no-op. Both remain fenced by run identity and lease;
@@ -40,8 +83,8 @@ their existing authenticated process. This applies to every implementation
 mission, independently of its topic, agent count, time budget, or replacement
 policy. The bounded discussion profile retains its separate contribution rules.
 
-`mesh_wait` accepts an optional `sinceRevision` and a `waitMs` of 0–30,000
-(default 20,000). It returns a compact participation state and wakes for pending
+`mesh_wait` accepts an optional `sinceRevision` and a `waitMs` of 0–300,000
+(default 120,000). It returns a compact participation state and wakes for pending
 mail, shared changes, timeout, or a terminal mission. Incoming messages are
 returned without implicit acknowledgment. On timeout, wait again; on a shared
 change, inspect the board and undertake available work. Closing acceptance keeps
@@ -71,6 +114,13 @@ peer exits; operator cancellation and existing per-run timeouts still apply.
 
 Checkpoints require a nonempty object. Omitted or malformed bodies are rejected
 at the tool boundary before persistence.
+
+Elapsed-budget exhaustion reserves the smaller of `completionGraceMs` and ten
+percent of the wall-clock budget for final handoffs. The mission becomes
+`resource-limit` before the hard deadline; final status and checkpoints remain
+available to live leased peers, while new work stays closed. This window does
+not accept partial work or extend the hard deadline. A forced kill can still
+lose the CLI's final usage receipt; missing usage remains unknown.
 
 An identical `mesh_requirement` update, with the current expected revision,
 returns `unchanged: true`. It preserves the author, requirement revision, and

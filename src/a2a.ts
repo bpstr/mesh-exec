@@ -70,6 +70,20 @@ CREATE TABLE IF NOT EXISTS mailbox_offers (
   delivery_id text NOT NULL REFERENCES mailbox_deliveries(delivery_id), run_id text NOT NULL,
   offered_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY(delivery_id,run_id)
 );
+CREATE TABLE IF NOT EXISTS message_uptakes (
+  mission_id text NOT NULL, recipient_id text NOT NULL, uptake_id text NOT NULL,
+  delivery_id text NOT NULL REFERENCES mailbox_deliveries(delivery_id), selector text NOT NULL,
+  selected_hash text NOT NULL, status text NOT NULL CHECK(status IN
+    ('resolved','narrowed','reframed','unchanged_confirmed','not_applicable','contested','unresolved')),
+  grounds text NOT NULL, evidence_refs jsonb NOT NULL, dependency_refs jsonb NOT NULL,
+  supersedes_id text, revision integer NOT NULL CHECK(revision>0), request_hash text NOT NULL,
+  run_id text NOT NULL, generation integer NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(mission_id,recipient_id,uptake_id),
+  UNIQUE(mission_id,recipient_id,delivery_id,selector,revision),
+  FOREIGN KEY(mission_id,recipient_id,supersedes_id)
+    REFERENCES message_uptakes(mission_id,recipient_id,uptake_id)
+);
+CREATE INDEX IF NOT EXISTS message_uptakes_delivery ON message_uptakes(mission_id,delivery_id,created_at,uptake_id);
 CREATE TABLE IF NOT EXISTS a2a_outbox (
   outbox_id text PRIMARY KEY, mission_id text NOT NULL, sender_id text NOT NULL, recipient_id text NOT NULL,
   message_id text NOT NULL, principal jsonb NOT NULL, request jsonb NOT NULL, payload_hash text NOT NULL,
@@ -122,6 +136,67 @@ interface AckInput {
   deliveryId: string;
   disposition?: 'handled' | 'deferred' | 'rejected' | 'superseded';
   reason?: string;
+}
+
+/** Self-reported semantic effect; never inferred from transport or handling. */
+export const UPTAKE_STATUSES = [
+  'resolved',
+  'narrowed',
+  'reframed',
+  'unchanged_confirmed',
+  'not_applicable',
+  'contested',
+  'unresolved',
+] as const;
+export type UptakeStatus = (typeof UPTAKE_STATUSES)[number];
+
+export interface UptakeInput {
+  uptakeId: string;
+  deliveryId: string;
+  /** RFC 6901 pointer into the immutable delivered message; empty selects the whole message. */
+  selector?: string;
+  status: UptakeStatus;
+  grounds: string;
+  /** Agent-declared citations, not automatically verified evidence or dependency edges. */
+  evidenceRefs?: string[];
+  dependencyRefs?: string[];
+  supersedesId?: string;
+}
+
+export interface UptakeRecord {
+  uptakeId: string;
+  deliveryId: string;
+  receiverId: string;
+  runId: string;
+  generation: number;
+  selector: string;
+  selectedHash: string;
+  status: UptakeStatus;
+  grounds: string;
+  evidenceRefs: string[];
+  dependencyRefs: string[];
+  supersedesId: string | null;
+  revision: number;
+  createdAt: string;
+}
+
+export interface UptakeRow {
+  mission_id: string;
+  recipient_id: string;
+  uptake_id: string;
+  delivery_id: string;
+  selector: string;
+  selected_hash: string;
+  status: UptakeStatus;
+  grounds: string;
+  evidence_refs: string[];
+  dependency_refs: string[];
+  supersedes_id: string | null;
+  revision: number;
+  request_hash: string;
+  run_id: string;
+  generation: number;
+  created_at: string | Date;
 }
 
 export interface CancelInput {
@@ -681,6 +756,152 @@ export class A2aService {
         workRevision: await workRevision(tx, principal.missionId),
       };
     });
+  }
+
+  /** Append the receiver's declared effect without acknowledging or completing its source. */
+  async recordUptake(principal: Principal, input: UptakeInput) {
+    const request = {
+      uptakeId: id(input.uptakeId, 'uptakeId'),
+      deliveryId: id(input.deliveryId, 'deliveryId'),
+      selector: uptakeSelector(input.selector ?? ''),
+      status: input.status,
+      grounds: boundedText(input.grounds, 'grounds', 4096),
+      evidenceRefs: uptakeRefs(input.evidenceRefs, 'evidenceRefs'),
+      dependencyRefs: uptakeRefs(input.dependencyRefs, 'dependencyRefs'),
+      supersedesId:
+        input.supersedesId === undefined ? null : id(input.supersedesId, 'supersedesId'),
+    };
+    if (!UPTAKE_STATUSES.includes(request.status))
+      throw new MeshError('INVALID_UPTAKE', 'Invalid uptake status.');
+    const requestHash = hash(request);
+    return this.options.db.transaction(async (tx) => {
+      await lockMission(tx, principal.missionId);
+      await this.options.validatePrincipal(tx, principal);
+      const delivery = await this.uptakeDelivery(tx, principal, request.deliveryId);
+      const existing = (
+        await tx.query<UptakeRow>(
+          'SELECT * FROM message_uptakes WHERE mission_id=$1 AND recipient_id=$2 AND uptake_id=$3',
+          [principal.missionId, principal.agentId, request.uptakeId],
+        )
+      ).rows[0];
+      // Replay precedes current-head validation: later reconsideration cannot invalidate an exact retry.
+      if (existing) {
+        if (existing.request_hash !== requestHash)
+          throw new MeshError(
+            'UPTAKE_CONFLICT',
+            'uptakeId was already used with different content.',
+          );
+        return { uptake: uptakeView(existing), replayed: true };
+      }
+      const selectedHash = hash(selectedValue(delivery.message, request.selector));
+      const head = (
+        await tx.query<UptakeRow>(
+          'SELECT * FROM message_uptakes WHERE mission_id=$1 AND recipient_id=$2 AND delivery_id=$3 AND selector=$4 ORDER BY revision DESC LIMIT 1',
+          [principal.missionId, principal.agentId, request.deliveryId, request.selector],
+        )
+      ).rows[0];
+      if ((head?.uptake_id ?? null) !== request.supersedesId)
+        throw new MeshError(
+          'UPTAKE_HEAD_CONFLICT',
+          'Supersede the current uptake for this delivery and selector.',
+          {
+            currentUptakeId: head?.uptake_id ?? null,
+          },
+        );
+      const row = (
+        await tx.query<UptakeRow>(
+          `INSERT INTO message_uptakes(mission_id,recipient_id,uptake_id,delivery_id,selector,selected_hash,
+          status,grounds,evidence_refs,dependency_refs,supersedes_id,revision,request_hash,run_id,generation)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12,$13,$14,$15) RETURNING *`,
+          [
+            principal.missionId,
+            principal.agentId,
+            request.uptakeId,
+            request.deliveryId,
+            request.selector,
+            selectedHash,
+            request.status,
+            request.grounds,
+            json(request.evidenceRefs),
+            json(request.dependencyRefs),
+            request.supersedesId,
+            (head?.revision ?? 0) + 1,
+            requestHash,
+            principal.runId,
+            principal.generation,
+          ],
+        )
+      ).rows[0]!;
+      const uptake = uptakeView(row);
+      await this.trace(
+        tx,
+        principal,
+        'message.uptake.recorded',
+        delivery.trace_id,
+        delivery.message_id,
+        delivery.task_id,
+        { ...uptake, senderId: delivery.sender_id },
+      );
+      return { uptake, replayed: false };
+    });
+  }
+
+  /** Read only this receiver's history; current head may advance between pages. */
+  async listUptakes(
+    principal: Principal,
+    input: {
+      deliveryId: string;
+      selector?: string;
+      limit?: number;
+      beforeRevision?: number;
+    },
+  ) {
+    const deliveryId = id(input.deliveryId, 'deliveryId');
+    const selector = uptakeSelector(input.selector ?? '');
+    const limit = boundedLimit(input.limit, 16, 64);
+    if (
+      input.beforeRevision !== undefined &&
+      (!Number.isSafeInteger(input.beforeRevision) || input.beforeRevision < 1)
+    )
+      throw new MeshError('INVALID_UPTAKE', 'beforeRevision must be a positive safe integer.');
+    return this.options.db.transaction(async (tx) => {
+      await lockMission(tx, principal.missionId);
+      await this.options.validatePrincipal(tx, principal);
+      const delivery = await this.uptakeDelivery(tx, principal, deliveryId);
+      selectedValue(delivery.message, selector);
+      const values = [principal.missionId, principal.agentId, deliveryId, selector];
+      const head = (
+        await tx.query<UptakeRow>(
+          'SELECT * FROM message_uptakes WHERE mission_id=$1 AND recipient_id=$2 AND delivery_id=$3 AND selector=$4 ORDER BY revision DESC LIMIT 1',
+          values,
+        )
+      ).rows[0];
+      const rows = (
+        await tx.query<UptakeRow>(
+          `SELECT * FROM message_uptakes WHERE mission_id=$1 AND recipient_id=$2 AND delivery_id=$3 AND selector=$4
+         AND ($5::bigint IS NULL OR revision<$5::bigint) ORDER BY revision DESC LIMIT $6`,
+          [...values, input.beforeRevision ?? null, limit + 1],
+        )
+      ).rows;
+      const page = rows.slice(0, limit);
+      return {
+        uptakes: page.map(uptakeView).reverse(),
+        total: head?.revision ?? 0,
+        currentUptakeId: head?.uptake_id ?? null,
+        nextBeforeRevision: rows.length > limit ? page.at(-1)!.revision : null,
+      };
+    });
+  }
+
+  private async uptakeDelivery(tx: Sql, principal: Principal, deliveryId: string) {
+    const delivery = (
+      await tx.query<DeliveryRow>(
+        'SELECT * FROM mailbox_deliveries WHERE delivery_id=$1 AND mission_id=$2 AND recipient_id=$3',
+        [deliveryId, principal.missionId, principal.agentId],
+      )
+    ).rows[0];
+    if (!delivery) throw new MeshError('NOT_FOUND', 'Mailbox delivery not found.');
+    return delivery;
   }
 
   async ack(principal: Principal, input: AckInput) {
@@ -1475,6 +1696,75 @@ function id(value: unknown, name: string): string {
   )
     throw new RequestMalformedError(`Invalid ${name}.`);
   return value;
+}
+function boundedText(value: unknown, name: string, max: number): string {
+  if (typeof value !== 'string' || !value.trim() || value.length > max || value.includes('\0'))
+    throw new MeshError('INVALID_UPTAKE', `${name} must contain 1–${max} characters.`);
+  return value;
+}
+function uptakeRefs(value: unknown, name: string): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 16)
+    throw new MeshError('INVALID_UPTAKE', `${name} must contain at most 16 references.`);
+  return value.map((ref) => boundedText(ref, name, 1024));
+}
+function uptakeSelector(value: unknown): string {
+  if (
+    typeof value !== 'string' ||
+    value.length > 1024 ||
+    /[\u0000-\u001f\u007f]/u.test(value) ||
+    (value !== '' && !value.startsWith('/')) ||
+    /~(?:[^01]|$)/u.test(value)
+  )
+    throw new MeshError(
+      'INVALID_UPTAKE_SELECTOR',
+      'selector must be a JSON Pointer of at most 1024 characters.',
+    );
+  return value;
+}
+function selectedValue(message: unknown, selector: string): unknown {
+  let value = message;
+  if (!selector) return value;
+  for (const encoded of selector.slice(1).split('/')) {
+    const key = encoded.replace(/~1/gu, '/').replace(/~0/gu, '~');
+    if (
+      value === null ||
+      typeof value !== 'object' ||
+      (Array.isArray(value) && !/^(0|[1-9][0-9]*)$/u.test(key)) ||
+      !Object.hasOwn(value, key)
+    )
+      throw new MeshError(
+        'INVALID_UPTAKE_SELECTOR',
+        'selector does not resolve in the delivered message.',
+      );
+    value = (value as Record<string, unknown>)[key];
+  }
+  return value;
+}
+export function uptakeView(row: UptakeRow): UptakeRecord {
+  return {
+    uptakeId: row.uptake_id,
+    deliveryId: row.delivery_id,
+    receiverId: row.recipient_id,
+    runId: row.run_id,
+    generation: row.generation,
+    selector: row.selector,
+    selectedHash: row.selected_hash,
+    status: row.status,
+    grounds: row.grounds,
+    evidenceRefs: row.evidence_refs,
+    dependencyRefs: row.dependency_refs,
+    supersedesId: row.supersedes_id,
+    revision: row.revision,
+    createdAt: new Date(row.created_at).toISOString(),
+  };
+}
+/** Read-only diagnostics must also work before a stopped mission's schema is migrated. */
+export async function uptakeLedgerAvailable(db: Sql): Promise<boolean> {
+  const result = await db.query<{ available: boolean }>(
+    "SELECT to_regclass('message_uptakes') IS NOT NULL AS available",
+  );
+  return result.rows[0]?.available === true;
 }
 function json(value: unknown): string {
   return JSON.stringify(value);

@@ -13,6 +13,7 @@ import {
 import type { Database, Sql } from './types.js';
 import { invariant } from './types.js';
 import { workState } from './planning.js';
+import { uptakeLedgerAvailable } from './a2a.js';
 
 /** Counts and artifact references only; event bodies and handoffs stay on disk. */
 export async function digest(db: Sql, missionId: string, after?: string) {
@@ -524,6 +525,14 @@ const TABLE_EXPORTS: readonly TableExport[] = [
     keys: ['e.delivery_id', 'e.run_id'],
     fields: ['delivery_id', 'run_id'],
   },
+  {
+    name: 'uptakes',
+    from: 'message_uptakes u',
+    select: 'u.*',
+    scope: 'u.mission_id=$1',
+    keys: ['u.recipient_id', 'u.uptake_id'],
+    fields: ['recipient_id', 'uptake_id'],
+  },
 ];
 
 function artifactSegment(value: string): string {
@@ -647,6 +656,7 @@ export async function exportMission(
       trace = await exportEvents(tx, missionId, join(directory, 'events.jsonl'));
       remember('events.jsonl', trace);
       for (const spec of TABLE_EXPORTS) {
+        if (spec.name === 'uptakes' && !(await uptakeLedgerAvailable(tx))) continue;
         const output = await tableArtifact(
           tx,
           missionId,

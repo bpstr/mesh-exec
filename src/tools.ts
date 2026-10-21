@@ -4,7 +4,7 @@ import { TaskState } from '@a2a-js/sdk';
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Store, normalizeResource } from './store.js';
-import { A2aService } from './a2a.js';
+import { A2aService, UPTAKE_STATUSES } from './a2a.js';
 import { Workspace } from './workspace.js';
 import { Completion } from './completion.js';
 import { coordinationInstructions, discussionInstructions } from './coordination.js';
@@ -180,7 +180,13 @@ export class MeshTools {
           annotations: {
             readOnlyHint: readOnly,
             destructiveHint: !readOnly,
-            idempotentHint: ['mesh_patch', 'mesh_exec', 'mesh_claim', 'mesh_ack'].includes(name),
+            idempotentHint: [
+              'mesh_patch',
+              'mesh_exec',
+              'mesh_claim',
+              'mesh_ack',
+              'mesh_uptake',
+            ].includes(name),
             openWorldHint: name === 'mesh_exec',
           },
         },
@@ -570,6 +576,42 @@ export class MeshTools {
             }),
           );
         return { acknowledgments };
+      },
+    );
+    tool(
+      'mesh_uptake',
+      'Record or inspect your declared uptake of an immutable received message. Record requires uptakeId, status and grounds; selector is a JSON Pointer (empty means the whole message). Reconsideration must supersede the current uptakeId. Reuse the same ID only for exact retries. References are declarations, not verified support. This neither acknowledges mail nor completes work. List reads your history for that delivery and selector.',
+      {
+        action: z.enum(['record', 'list']),
+        deliveryId: id,
+        selector: z.string().max(1024).optional(),
+        uptakeId: id.optional(),
+        status: z.enum(UPTAKE_STATUSES).optional(),
+        grounds: z.string().min(1).max(4096).optional(),
+        evidenceRefs: z.array(z.string().min(1).max(1024)).max(16).optional(),
+        dependencyRefs: z.array(z.string().min(1).max(1024)).max(16).optional(),
+        supersedesId: id.optional(),
+        limit: z.number().int().min(1).max(64).optional(),
+        beforeRevision: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+      },
+      false,
+      (a) => {
+        if (a.action === 'record') {
+          invariant(
+            a.limit === undefined && a.beforeRevision === undefined,
+            'INVALID_UPTAKE',
+            'Pagination applies only to list.',
+          );
+          return this.a2a.recordUptake(p, a);
+        }
+        invariant(
+          ['uptakeId', 'status', 'grounds', 'evidenceRefs', 'dependencyRefs', 'supersedesId'].every(
+            (key) => a[key] === undefined,
+          ),
+          'INVALID_UPTAKE',
+          'List cannot contain record fields.',
+        );
+        return this.a2a.listUptakes(p, a);
       },
     );
     tool(

@@ -84,6 +84,56 @@ test('consultations reuse identical open requests, allow later new work and reje
   );
 });
 
+test('MCP uptake records a receiving peer assertion without acknowledgment or task completion', async (t) => {
+  const f = await fixture();
+  t.after(f.close);
+  assert.ok((await f.cb.listTools()).tools.some((tool) => tool.name === 'mesh_uptake'));
+  const sent = await f.call(f.ca, 'mesh_send', {
+    recipientId: 'A2',
+    messageId: 'uptake-source',
+    text: 'Can the current task preserve retry identity?',
+  });
+  const delivery = (await f.call(f.cb, 'mesh_poll')).messages[0];
+  const request = {
+    action: 'record',
+    uptakeId: 'identity-uptake',
+    deliveryId: delivery.deliveryId,
+    selector: '/parts/0/text',
+    status: 'unresolved',
+    grounds: 'Need the current retry test result.',
+    evidenceRefs: ['test-result:pending'],
+    dependencyRefs: ['work:retry'],
+  };
+  await assert.rejects(f.call(f.ca, 'mesh_uptake', request), /NOT_FOUND/);
+  const recorded = await f.call(f.cb, 'mesh_uptake', request);
+  assert.equal(recorded.uptake.receiverId, 'A2');
+  assert.equal(recorded.uptake.status, 'unresolved');
+  assert.equal((await f.call(f.cb, 'mesh_uptake', request)).replayed, true);
+  const listed = await f.call(f.cb, 'mesh_uptake', {
+    action: 'list',
+    deliveryId: delivery.deliveryId,
+    selector: request.selector,
+  });
+  assert.equal(listed.currentUptakeId, 'identity-uptake');
+  assert.equal(listed.total, 1);
+  await assert.rejects(
+    f.call(f.cb, 'mesh_uptake', { ...request, action: 'list' }),
+    /List cannot contain record fields/,
+  );
+  await assert.rejects(
+    f.call(f.cb, 'mesh_uptake', { ...request, limit: 16 }),
+    /Pagination applies only to list/,
+  );
+  assert.equal((await f.call(f.cb, 'mesh_poll')).messages.length, 1);
+  const task = (await f.db.query('SELECT state FROM a2a_tasks WHERE task_id=$1', [sent.taskId]))
+    .rows[0];
+  assert.equal(task.state, 1);
+  const trace = await readEvents(f.db, f.daemon.missionId, { kind: 'message.uptake.recorded' });
+  assert.equal(trace.length, 1);
+  assert.equal(trace[0].agentId, 'A2');
+  assert.equal(trace[0].messageId, 'uptake-source');
+});
+
 test('work bundles are declared in a batch and claims require their exact ready resources', async (t) => {
   const f = await fixture();
   t.after(f.close);

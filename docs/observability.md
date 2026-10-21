@@ -37,19 +37,26 @@ mesh messages --mission MISSION_ID --pending --limit 500
 
 An internal exchange has several distinct events:
 
-| Event/state                                                | What it establishes                                              | What it does not establish                 |
-| ---------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------ |
-| `message.send.accepted`                                    | The outgoing request is committed to the durable outbox          | Recipient acceptance                       |
-| `message.delivery.started`                                 | A particular HTTP attempt began                                  | Successful delivery                        |
-| `a2a.request.received`                                     | The authenticated endpoint received a wire request               | Durable task acceptance                    |
-| `message.ingress.accepted` and `message.mailbox.persisted` | Task, message, inbox, and their trace committed together         | An agent has read the message              |
-| `message.delivery.accepted`                                | The sender received the recipient's accepted task result         | Semantic handling                          |
-| `message.offered`                                          | A poll exposed the full delivery to a particular run             | Understanding or agreement                 |
-| `message.acknowledged`                                     | A run explicitly recorded its handling disposition               | A task answer or completion                |
-| `message.reply.accepted`                                   | The recipient advanced the task and created an answer delivery   | The original sender has handled the answer |
-| `task.canceled`                                            | The consultation was canceled and a counterpart notice persisted | Unrelated process termination              |
+| Event/state                                                | What it establishes                                                           | What it does not establish                             |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `message.send.accepted`                                    | The outgoing request is committed to the durable outbox                       | Recipient acceptance                                   |
+| `message.delivery.started`                                 | A particular HTTP attempt began                                               | Successful delivery                                    |
+| `a2a.request.received`                                     | The authenticated endpoint received a wire request                            | Durable task acceptance                                |
+| `message.ingress.accepted` and `message.mailbox.persisted` | Task, message, inbox, and their trace committed together                      | An agent has read the message                          |
+| `message.delivery.accepted`                                | The sender received the recipient's accepted task result                      | Semantic handling                                      |
+| `message.offered`                                          | A poll exposed the full delivery to a particular run                          | Understanding or agreement                             |
+| `message.acknowledged`                                     | A run explicitly recorded its handling disposition                            | A task answer or completion                            |
+| `message.uptake.recorded`                                  | The authenticated receiver declared an assessment of selected message content | Verified understanding, correctness, or performed work |
+| `message.reply.accepted`                                   | The recipient advanced the task and created an answer delivery                | The original sender has handled the answer             |
+| `task.canceled`                                            | The consultation was canceled and a counterpart notice persisted              | Unrelated process termination                          |
 
 `mailbox.notice` is a bounded notification containing identifiers. `mailbox.polled` records the tool-level poll result. Neither event acknowledges a message. Each successor run can receive a fresh exposure for an unhandled delivery. `deferred` leaves it pending; `handled`, `rejected`, and `superseded` are final dispositions.
+
+Receiver [uptake records](semantic-memory.md) preserve interpretation separately
+from this lifecycle. They pin a selected message value and retain append-only
+revisions with declared evidence/dependency references. `conversation` includes
+bounded uptake history, its total, and truncation. Uptake is an attributed
+assertion; the daemon does not infer agreement or verify the cited evidence.
 
 Retries are visible as `message.delivery.retry_scheduled`; permanent rejection is `message.delivery.rejected`. A replay of accepted ingress produces `message.ingress.replayed` with the original result. This is how to distinguish two HTTP attempts from two logical questions.
 
@@ -169,6 +176,7 @@ The directory contains:
 | `a2a-messages.json`            | Accepted message records with payload and sender provenance                                               |
 | `outbox.json`, `attempts.json` | Full outgoing intents and individual transmission attempts                                                |
 | `exposures.json`               | Which run was offered each mailbox delivery                                                               |
+| `uptakes.json`                 | Complete receiver-owned assessment history, including superseded revisions and declared references        |
 | `runs/`                        | Available captured run logs, prompt, handoff, and other recognized run artifacts                          |
 | `operations/`                  | Available command stdout/stderr logs                                                                      |
 | `export.json`                  | Export time, event count, included artifact paths, redaction description, and a `missing` artifact report |
@@ -179,7 +187,12 @@ The versioned manifest records archive paths, original source paths, byte counts
 
 `verify-export` works without a database or running daemon. It checks the recorded file hashes and sizes and reports missing files, mismatches, unsafe paths, errors, and declared partial captures. Verification establishes archive integrity relative to its manifest; capture completeness is a separate reported property. The bundle does not replace a PostgreSQL backup or source checkout backup.
 
-New bundles include `work.json`; verification also accepts earlier format-version 1 bundles that predate this optional ledger file.
+New bundles include `work.json` and include `uptakes.json` when the database has
+the uptake ledger table. Read-only export of an older database omits the uptake
+file and its table count; this means unavailable, rather than an empty ledger.
+Conversation inspection similarly reports `uptakes.available: false` with a
+warning. Verification also accepts earlier format-version 1 bundles that predate
+either optional ledger file.
 
 For a trace-only JSONL export, optionally filtered:
 

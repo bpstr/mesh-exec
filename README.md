@@ -24,6 +24,19 @@ The wrapper starts up to the configured number of Codex processes, enforces time
 
 Long commands run behind durable operation handles. Source changes go through one guarded publication service. Completion requires recorded requirements, evidence, independent reviews, handled messages, and final checks against an unchanged source manifest. A model's final message is a handoff, not the completion authority.
 
+### Peer uptake and optional memory
+
+Implementation peers can use `mesh_uptake` to record how a received contribution
+resolved, narrowed, reframed, confirmed, or left open a question. Assessments are
+owned by the receiver, tied to immutable message content, and revised through an
+append-only history. Acknowledgment and uptake remain separate; neither is a
+passing requirement review. See [receiver uptake and derived memory](docs/semantic-memory.md).
+
+The [meshmem package evaluation](docs/meshmem-evaluation.md) examines a possible
+external recall service. Integration remains a proposal: the package is not a
+dependency, and managed peers retain the existing isolated plugin/hook settings.
+PostgreSQL remains the coordination authority.
+
 ## Requirements
 
 | Component      | Requirement                                                                                      |

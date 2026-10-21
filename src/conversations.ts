@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { uptakeView, uptakeLedgerAvailable, type UptakeRecord, type UptakeRow } from './a2a.js';
 import { redact } from './trace.js';
 import { MeshError, type Sql, type TraceEvent } from './types.js';
 
@@ -110,6 +111,8 @@ export interface ConversationMessage {
     handledByRunId: string | null;
     exposures: HistoryWindow<MessageExposure>;
     acknowledgements: HistoryWindow<MessageAcknowledgement>;
+    /** Receiver assertions, independent of delivery/handling/task states. */
+    uptakes: HistoryWindow<UptakeRecord> & { available: boolean };
   };
   timings: {
     unit: 'milliseconds';
@@ -387,6 +390,8 @@ interface Histories {
   attempts: Map<string, JsonObject[]>;
   exposures: Map<string, JsonObject[]>;
   acknowledgements: Map<string, JsonObject[]>;
+  uptakes: Map<string, JsonObject[]>;
+  uptakesAvailable: boolean;
 }
 
 async function messageHistories(
@@ -400,7 +405,8 @@ async function messageHistories(
   const deliveries = rows.flatMap((r) =>
     typeof r.delivery?.delivery_id === 'string' ? [r.delivery.delivery_id] : [],
   );
-  const [attempts, exposures, acknowledgements] = await Promise.all([
+  const uptakesAvailable = await uptakeLedgerAvailable(db);
+  const [attempts, exposures, acknowledgements, uptakes] = await Promise.all([
     db.query<JsonObject>(
       `SELECT * FROM (
       SELECT a.*,count(*) OVER(PARTITION BY a.outbox_id)::text AS total,
@@ -428,11 +434,23 @@ async function messageHistories(
     ) history WHERE position<=$3 ORDER BY seq`,
       [missionId, deliveries, HISTORY_LIMIT],
     ),
+    uptakesAvailable
+      ? db.query<JsonObject>(
+          `SELECT * FROM (
+      SELECT u.*,count(*) OVER(PARTITION BY u.delivery_id)::text AS total,
+        row_number() OVER(PARTITION BY u.delivery_id ORDER BY u.created_at DESC,u.revision DESC,u.uptake_id DESC) AS position
+      FROM message_uptakes u WHERE u.mission_id=$1 AND u.delivery_id=ANY($2::text[])
+    ) history WHERE position<=$3 ORDER BY created_at,revision,uptake_id`,
+          [missionId, deliveries, HISTORY_LIMIT],
+        )
+      : Promise.resolve({ rows: [], rowCount: 0 }),
   ]);
   return {
     attempts: group(attempts.rows, 'outbox_id'),
     exposures: group(exposures.rows, 'delivery_id'),
     acknowledgements: group(acknowledgements.rows, 'delivery_id'),
+    uptakes: group(uptakes.rows, 'delivery_id'),
+    uptakesAvailable,
   };
 }
 
@@ -447,6 +465,7 @@ function messageView(
   const attempts = histories.attempts.get(String(outbox?.outbox_id)) ?? [];
   const exposures = histories.exposures.get(String(delivery?.delivery_id)) ?? [];
   const acknowledgements = histories.acknowledgements.get(String(delivery?.delivery_id)) ?? [];
+  const uptakes = histories.uptakes.get(String(delivery?.delivery_id)) ?? [];
   const state = number(row.task?.state);
   const sourcePrincipal = object(outbox?.principal);
   const transport = !outbox
@@ -484,6 +503,10 @@ function messageView(
         : null,
   };
   const warnings: string[] = [];
+  if (!histories.uptakesAvailable)
+    warnings.push(
+      'Uptake history is unavailable in this database schema; no uptake records were read.',
+    );
   if (row.first_seq === '0')
     warnings.push(
       'No accepted-message trace event was found; ordering uses the stable identity fallback.',
@@ -571,6 +594,10 @@ function messageView(
             disposition: string(object(a.data).disposition),
             reason: object(a.data).reason,
           })),
+          uptakes: {
+            ...window(uptakes, (u) => uptakeView(u as unknown as UptakeRow)),
+            available: histories.uptakesAvailable,
+          },
         }
       : null,
     timings: {

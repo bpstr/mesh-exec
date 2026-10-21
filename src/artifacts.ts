@@ -351,8 +351,8 @@ const requiredTopLevelArtifacts = new Set([
   'attempts.json',
   'exposures.json',
 ]);
-// Older format-version 1 bundles predate the work ledger snapshot.
-const topLevelArtifacts = new Set([...requiredTopLevelArtifacts, 'work.json']);
+// Older format-version 1 bundles predate the work and uptake ledger snapshots.
+const topLevelArtifacts = new Set([...requiredTopLevelArtifacts, 'work.json', 'uptakes.json']);
 
 function allowedArchivePath(path: string): boolean {
   if (!path || isAbsolute(path) || path.includes('\\') || path.includes('\0')) return false;

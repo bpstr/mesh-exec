@@ -275,6 +275,12 @@ test('mission export retains paged run history, work state, active command logs,
     `INSERT INTO mailbox_offers(delivery_id,run_id) VALUES('delivery-1','run-01'),('delivery-1','run-02')`,
   );
   await f.db.query(
+    `INSERT INTO message_uptakes(mission_id,recipient_id,uptake_id,delivery_id,selector,selected_hash,
+      status,grounds,evidence_refs,dependency_refs,revision,request_hash,run_id,generation)
+     VALUES($1,'A2','uptake-1','delivery-1','/text','hash','unresolved',$2,'["source@revision"]','["work:target"]',1,'hash','run-02',2)`,
+    [f.mission.id, `Support still needs review ${secret}`],
+  );
+  await f.db.query(
     `INSERT INTO a2a_messages(mission_id,sender_id,recipient_id,message_id,task_id,run_id,generation,payload_hash,message,accepted_result,kind,trace_id)
     VALUES($1,'A1','A2','accepted-message','task-1','run-01',1,'hash','{"text":"complete delivered message"}','{}','question','trace-1')`,
     [f.mission.id],
@@ -335,6 +341,11 @@ test('mission export retains paged run history, work state, active command logs,
   assert.match(await readFile(join(directory, 'attempts.json'), 'utf8'), /transient retry/u);
   assert.equal(JSON.parse(await readFile(join(directory, 'exposures.json'), 'utf8')).length, 2);
   assert.match(await readFile(join(directory, 'a2a-messages.json'), 'utf8'), /run-01/u);
+  const uptakes = JSON.parse(await readFile(join(directory, 'uptakes.json'), 'utf8'));
+  assert.equal(uptakes.length, 1);
+  assert.equal(uptakes[0].grounds, 'Support still needs review [REDACTED]');
+  assert.equal(uptakes[0].status, 'unresolved');
+  assert.equal(manifest.tables.uptakes, 1);
   const command = manifest.artifacts.find(
     (item: any) => item.operationId === 'live-command' && item.path.endsWith('stdout.log'),
   );
@@ -351,4 +362,20 @@ test('mission export retains paged run history, work state, active command logs,
   const verified = await verifyExport(directory);
   assert.equal(verified.valid, true, JSON.stringify(verified));
   assert.equal(verified.partial, true);
+});
+
+test('read-only exports omit the optional uptake ledger from unmigrated databases', async (t) => {
+  const f = await fixture();
+  t.after(f.close);
+  await f.db.query('DROP TABLE message_uptakes');
+  const directory = join(f.directory, 'legacy-export');
+  await exportMission(f.db, f.mission.id, directory);
+  const manifest = JSON.parse(await readFile(join(directory, 'export.json'), 'utf8'));
+  assert.equal(manifest.tables.uptakes, undefined);
+  assert.ok(!manifest.artifacts.some((item: any) => item.path === 'uptakes.json'));
+  assert.equal((await verifyExport(directory)).valid, true);
+  assert.equal(
+    (await f.db.query("SELECT to_regclass('message_uptakes') AS relation")).rows[0].relation,
+    null,
+  );
 });
